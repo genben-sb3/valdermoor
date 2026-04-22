@@ -41,10 +41,16 @@ npm install
 
 ### Schritt 2 — LM Studio einrichten (einmalig)
 
-1. LM Studio öffnen → **Discover**-Tab → Modell suchen und herunterladen
-2. Empfohlen für schwache Laptops: **Gemma 4 E4B** (~2–3 GB RAM)
-3. Modell laden: **Chat**-Tab → Modell oben auswählen
-4. Server starten: **Local Server**-Tab → **Start Server** klicken (Port 1234)
+> **Hinweis:** Ben's Laptop hat nur 4 GB RAM gesamt — Modellwahl ist kritisch.
+
+| Modell | RAM-Bedarf | Hinweis |
+|--------|-----------|---------|
+| **SmolLM2 360M Q4** | ~250 MB | Sicherste Wahl, sehr schnell, begrenzte Kreativität |
+| **Phi-3.5 Mini Q4** | ~2.3 GB | Bessere DM-Qualität, knapp aber machbar auf 4 GB |
+
+1. LM Studio öffnen → **Discover**-Tab → `SmolLM2` oder `Phi-3.5 Mini` suchen
+2. Modell laden: **Chat**-Tab → Modell oben auswählen
+3. Server starten: **Local Server**-Tab → **Start Server** klicken (Port 1234)
 
 ### Schritt 3 — `index.html` ersetzen
 
@@ -69,17 +75,15 @@ const character: Character = { name: '???', class: '???', hp: 20, maxHp: 20, sta
 const inventory: InventoryItem[] = [];
 ```
 
-**DM System-Prompt (Deutsch):**
+**DM System-Prompt (Deutsch, kurz gehalten für kleine Modelle):**
 ```
-Du bist ein epischer Dungeon Master für Dungeons & Dragons 5e in der Welt Valdermoor.
-- Beschreibe Szenen in 2-4 lebhaften Sätzen
-- Lass Spielerentscheidungen die Geschichte beeinflussen
-- Wenn ein Würfelwurf nötig ist, schreibe: [WÜRFEL: W20] und warte auf das Ergebnis
-- Führe neue Spieler mit Charaktererstellung ein (frage nach Name, Rasse, Klasse)
-- Wenn der Spieler Gegenstände findet, schreibe: [ITEM: Gegenstandsname]
-- Antworte immer auf Deutsch, max. 150 Wörter
-- Beginne mit einer dramatischen Eröffnungsszene
+Du bist ein Dungeon Master in der Welt Valdermoor. Antworte immer auf Deutsch.
+Regeln: Beschreibe kurz (2-3 Sätze). Wenn Würfeln nötig: schreibe [WÜRFEL: W20].
+Wenn Spieler etwas findet: schreibe [ITEM: Name]. Frage zuerst nach Name und Klasse.
 ```
+
+> **Warum so kurz?** Kleine Modelle (360M–3.8B) folgen langen Prompts schlecht.
+> Weniger Anweisungen = zuverlässigere Ausgaben. `max_tokens: 250` setzen.
 
 **LM Studio Streaming (`sendToLMStudio`):**
 ```typescript
