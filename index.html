@@ -80,6 +80,87 @@
       </aside>
     </main>
 
+    <div id="char-modal" class="modal-overlay">
+      <div class="modal-box">
+        <h2>Dein Charakter</h2>
+        <p class="modal-sub">
+          Fülle das Formular aus — oder lade einen PDF-Charakterbogen hoch, dann versuchen wir die Felder automatisch zu erkennen.
+        </p>
+
+        <div class="modal-upload">
+          <label class="upload-btn" for="pdf-input">📄 PDF-Charakterbogen laden</label>
+          <input type="file" id="pdf-input" accept="application/pdf,.pdf" hidden />
+          <span id="pdf-status" class="pdf-status"></span>
+        </div>
+
+        <div class="modal-grid">
+          <div class="modal-field">
+            <label for="form-name">Name</label>
+            <input type="text" id="form-name" placeholder="z.B. Thorin Eichenschild" />
+          </div>
+          <div class="modal-field">
+            <label for="form-class">Klasse</label>
+            <select id="form-class">
+              <option>Krieger</option>
+              <option>Magier</option>
+              <option>Zauberer</option>
+              <option>Dieb</option>
+              <option>Schurke</option>
+              <option>Waldläufer</option>
+              <option>Kleriker</option>
+              <option>Barde</option>
+              <option>Paladin</option>
+              <option>Druide</option>
+              <option>Mönch</option>
+              <option>Hexenmeister</option>
+            </select>
+          </div>
+          <div class="modal-field">
+            <label for="form-hp">Max. Lebenspunkte</label>
+            <input type="number" id="form-hp" min="1" max="999" value="20" />
+          </div>
+        </div>
+
+        <div class="modal-stats-header">
+          <h3>Werte</h3>
+          <button type="button" id="roll-stats-btn" class="btn-secondary">
+            🎲 Neu würfeln (4W6 drop lowest)
+          </button>
+        </div>
+        <div class="modal-stats">
+          <div class="form-stat">
+            <label>STR</label><input type="number" id="form-STR" min="3" max="20" value="10" />
+          </div>
+          <div class="form-stat">
+            <label>DEX</label><input type="number" id="form-DEX" min="3" max="20" value="10" />
+          </div>
+          <div class="form-stat">
+            <label>CON</label><input type="number" id="form-CON" min="3" max="20" value="10" />
+          </div>
+          <div class="form-stat">
+            <label>INT</label><input type="number" id="form-INT" min="3" max="20" value="10" />
+          </div>
+          <div class="form-stat">
+            <label>WIS</label><input type="number" id="form-WIS" min="3" max="20" value="10" />
+          </div>
+          <div class="form-stat">
+            <label>CHA</label><input type="number" id="form-CHA" min="3" max="20" value="10" />
+          </div>
+        </div>
+
+        <details id="pdf-text-wrapper" class="modal-pdf-preview" hidden>
+          <summary>Extrahierter PDF-Text anzeigen</summary>
+          <pre id="pdf-text"></pre>
+        </details>
+
+        <div class="modal-actions">
+          <button type="button" id="start-btn" class="btn-primary">
+            ⚔️ Abenteuer beginnen
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

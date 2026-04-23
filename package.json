@@ -11,5 +11,8 @@
   "devDependencies": {
     "typescript": "~6.0.2",
     "vite": "^8.0.10"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.6.205"
   }
 }
