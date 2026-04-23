@@ -13,6 +13,9 @@
     "vite": "^8.0.10"
   },
   "dependencies": {
-    "pdfjs-dist": "^5.6.205"
+    "@types/qrcode": "^1.5.6",
+    "otpauth": "^9.5.0",
+    "pdfjs-dist": "^5.6.205",
+    "qrcode": "^1.5.4"
   }
 }

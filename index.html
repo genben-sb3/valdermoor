@@ -13,35 +13,83 @@
     <title>Valdermoor — Dein D&D Abenteuer</title>
   </head>
   <body>
-    <main id="app">
+    <!-- LOGIN-SCREEN (vor allem anderen) -->
+    <div id="login-screen" class="screen-overlay">
+      <div class="login-box">
+        <h1>⚔️ Valdermoor</h1>
+        <p class="login-sub">Dein Abenteuer beginnt mit einer sicheren Anmeldung.</p>
+
+        <div class="tab-row">
+          <button type="button" class="tab-btn active" data-tab="login">Anmelden</button>
+          <button type="button" class="tab-btn" data-tab="register">Registrieren</button>
+        </div>
+
+        <!-- LOGIN TAB -->
+        <form id="login-form" class="tab-panel active">
+          <div class="modal-field">
+            <label for="login-user">Benutzername</label>
+            <input type="text" id="login-user" autocomplete="username" required />
+          </div>
+          <div class="modal-field">
+            <label for="login-pass">Passwort</label>
+            <input type="password" id="login-pass" autocomplete="current-password" required />
+          </div>
+          <div class="modal-field" id="login-totp-field" hidden>
+            <label for="login-totp">2FA-Code (aus deiner Authenticator-App)</label>
+            <input type="text" id="login-totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
+          </div>
+          <div class="login-error" id="login-error"></div>
+          <button type="submit" class="btn-primary">Anmelden</button>
+        </form>
+
+        <!-- REGISTER TAB -->
+        <form id="register-form" class="tab-panel" hidden>
+          <div class="register-step" data-step="1">
+            <div class="modal-field">
+              <label for="reg-user">Benutzername</label>
+              <input type="text" id="reg-user" autocomplete="username" required />
+            </div>
+            <div class="modal-field">
+              <label for="reg-pass">Passwort (min. 6 Zeichen)</label>
+              <input type="password" id="reg-pass" autocomplete="new-password" minlength="6" required />
+            </div>
+            <div class="login-error" id="register-error"></div>
+            <button type="button" id="reg-next-btn" class="btn-primary">Weiter → 2FA einrichten</button>
+          </div>
+
+          <div class="register-step" data-step="2" hidden>
+            <p class="reg-hint">
+              Scanne diesen QR-Code mit deiner Authenticator-App (Google Authenticator, Microsoft Authenticator, Authy…):
+            </p>
+            <div id="qr-container"></div>
+            <details>
+              <summary>Code nicht scannbar? Manuell eingeben</summary>
+              <code id="totp-secret-text"></code>
+            </details>
+            <div class="modal-field">
+              <label for="reg-totp">Bestätige mit dem 6-stelligen Code aus der App:</label>
+              <input type="text" id="reg-totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
+            </div>
+            <div class="login-error" id="register-totp-error"></div>
+            <button type="button" id="reg-finish-btn" class="btn-primary">Konto erstellen</button>
+          </div>
+        </form>
+
+        <p class="login-footer">
+          Lokal im Browser. Nichts wird ins Internet geschickt.
+        </p>
+      </div>
+    </div>
+
+    <!-- HAUPT-APP (erst sichtbar nach Login) -->
+    <main id="app" hidden>
       <aside id="character-panel">
-        <h2>Charakter</h2>
-        <div class="field">
-          <label>Name</label>
-          <div id="char-name" class="value">???</div>
+        <div class="panel-header">
+          <h2>Helden</h2>
+          <span id="active-user" class="user-chip"></span>
         </div>
-        <div class="field">
-          <label>Klasse</label>
-          <div id="char-class" class="value">???</div>
-        </div>
-        <div class="field">
-          <label>Lebenspunkte</label>
-          <div class="hp-row">
-            <span id="char-hp">20</span> / <span id="char-max-hp">20</span>
-          </div>
-          <div class="hp-bar-outer">
-            <div id="char-hp-bar" class="hp-bar-inner"></div>
-          </div>
-        </div>
-        <h3>Werte</h3>
-        <div class="stats-grid">
-          <div class="stat"><label>STR</label><span id="stat-STR">10</span></div>
-          <div class="stat"><label>DEX</label><span id="stat-DEX">10</span></div>
-          <div class="stat"><label>CON</label><span id="stat-CON">10</span></div>
-          <div class="stat"><label>INT</label><span id="stat-INT">10</span></div>
-          <div class="stat"><label>WIS</label><span id="stat-WIS">10</span></div>
-          <div class="stat"><label>CHA</label><span id="stat-CHA">10</span></div>
-        </div>
+        <ul id="players-list"></ul>
+        <div id="active-player-detail"></div>
       </aside>
 
       <section id="chat-panel">
@@ -51,13 +99,20 @@
         </header>
         <div id="messages" role="log" aria-live="polite"></div>
         <form id="input-form">
-          <textarea
-            id="input"
-            rows="2"
-            placeholder="Was tust du? (Enter zum Senden, Shift+Enter für neue Zeile)"
-            autocomplete="off"
-          ></textarea>
-          <button type="submit" id="send-btn">Senden</button>
+          <div class="input-topbar">
+            <label for="player-select">Du sprichst als:</label>
+            <select id="player-select"></select>
+            <button type="button" id="logout-btn" class="text-btn">Abmelden</button>
+          </div>
+          <div class="input-row">
+            <textarea
+              id="input"
+              rows="2"
+              placeholder="Was tust du? (Enter = Senden, Shift+Enter = neue Zeile)"
+              autocomplete="off"
+            ></textarea>
+            <button type="submit" id="send-btn">Senden</button>
+          </div>
         </form>
       </section>
 
@@ -80,27 +135,62 @@
       </aside>
     </main>
 
-    <div id="char-modal" class="modal-overlay">
+    <!-- CHARACTER CREATION MODAL (nach Login, vor Spielstart) -->
+    <div id="char-modal" class="modal-overlay" hidden>
       <div class="modal-box">
-        <h2>Dein Charakter</h2>
+        <h2>Helden erstellen</h2>
         <p class="modal-sub">
-          Fülle das Formular aus — oder lade einen PDF-Charakterbogen hoch, dann versuchen wir die Felder automatisch zu erkennen.
+          Erstellt eure Charaktere. Es können 1 bis 4 Spieler mitspielen.
         </p>
 
+        <div class="modal-field age-field">
+          <label for="age-mode">Zielgruppe</label>
+          <select id="age-mode">
+            <option value="kinder">Kinder (einfach, friedlich)</option>
+            <option value="jugend" selected>Jugendliche (Standard-Abenteuer)</option>
+            <option value="erwachsen">Erwachsene (volle Fantasy)</option>
+          </select>
+        </div>
+
+        <div class="player-tabs-row">
+          <div id="player-tabs"></div>
+          <button type="button" id="add-player-btn" class="btn-secondary small">+ Spieler</button>
+        </div>
+
+        <div id="player-forms"></div>
+
+        <details id="pdf-text-wrapper" class="modal-pdf-preview" hidden>
+          <summary>Extrahierter PDF-Text anzeigen</summary>
+          <pre id="pdf-text"></pre>
+        </details>
+
+        <div class="modal-actions">
+          <button type="button" id="start-btn" class="btn-primary">
+            ⚔️ Abenteuer beginnen
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Template for a single player form (cloned in JS) -->
+    <template id="player-form-tpl">
+      <div class="player-form">
         <div class="modal-upload">
-          <label class="upload-btn" for="pdf-input">📄 PDF-Charakterbogen laden</label>
-          <input type="file" id="pdf-input" accept="application/pdf,.pdf" hidden />
-          <span id="pdf-status" class="pdf-status"></span>
+          <label class="upload-btn">
+            📄 PDF laden
+            <input type="file" class="pdf-input" accept="application/pdf,.pdf" hidden />
+          </label>
+          <span class="pdf-status"></span>
         </div>
 
         <div class="modal-grid">
           <div class="modal-field">
-            <label for="form-name">Name</label>
-            <input type="text" id="form-name" placeholder="z.B. Thorin Eichenschild" />
+            <label>Name</label>
+            <input type="text" class="form-name" placeholder="z.B. Thorin" />
           </div>
           <div class="modal-field">
-            <label for="form-class">Klasse</label>
-            <select id="form-class">
+            <label>Klasse</label>
+            <select class="form-class">
               <option>Krieger</option>
               <option>Magier</option>
               <option>Zauberer</option>
@@ -116,50 +206,27 @@
             </select>
           </div>
           <div class="modal-field">
-            <label for="form-hp">Max. Lebenspunkte</label>
-            <input type="number" id="form-hp" min="1" max="999" value="20" />
+            <label>Max. HP</label>
+            <input type="number" class="form-hp" min="1" max="999" value="20" />
           </div>
         </div>
 
         <div class="modal-stats-header">
           <h3>Werte</h3>
-          <button type="button" id="roll-stats-btn" class="btn-secondary">
-            🎲 Neu würfeln (4W6 drop lowest)
+          <button type="button" class="btn-secondary small roll-stats-btn">
+            🎲 Neu würfeln
           </button>
         </div>
         <div class="modal-stats">
-          <div class="form-stat">
-            <label>STR</label><input type="number" id="form-STR" min="3" max="20" value="10" />
-          </div>
-          <div class="form-stat">
-            <label>DEX</label><input type="number" id="form-DEX" min="3" max="20" value="10" />
-          </div>
-          <div class="form-stat">
-            <label>CON</label><input type="number" id="form-CON" min="3" max="20" value="10" />
-          </div>
-          <div class="form-stat">
-            <label>INT</label><input type="number" id="form-INT" min="3" max="20" value="10" />
-          </div>
-          <div class="form-stat">
-            <label>WIS</label><input type="number" id="form-WIS" min="3" max="20" value="10" />
-          </div>
-          <div class="form-stat">
-            <label>CHA</label><input type="number" id="form-CHA" min="3" max="20" value="10" />
-          </div>
-        </div>
-
-        <details id="pdf-text-wrapper" class="modal-pdf-preview" hidden>
-          <summary>Extrahierter PDF-Text anzeigen</summary>
-          <pre id="pdf-text"></pre>
-        </details>
-
-        <div class="modal-actions">
-          <button type="button" id="start-btn" class="btn-primary">
-            ⚔️ Abenteuer beginnen
-          </button>
+          <div class="form-stat"><label>STR</label><input type="number" class="stat-STR" min="3" max="20" value="10" /></div>
+          <div class="form-stat"><label>DEX</label><input type="number" class="stat-DEX" min="3" max="20" value="10" /></div>
+          <div class="form-stat"><label>CON</label><input type="number" class="stat-CON" min="3" max="20" value="10" /></div>
+          <div class="form-stat"><label>INT</label><input type="number" class="stat-INT" min="3" max="20" value="10" /></div>
+          <div class="form-stat"><label>WIS</label><input type="number" class="stat-WIS" min="3" max="20" value="10" /></div>
+          <div class="form-stat"><label>CHA</label><input type="number" class="stat-CHA" min="3" max="20" value="10" /></div>
         </div>
       </div>
-    </div>
+    </template>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
