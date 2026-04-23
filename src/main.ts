@@ -18,12 +18,11 @@ interface InventoryItem {
   quantity: number;
 }
 
-const DM_SYSTEM_PROMPT = `Du bist ein Dungeon Master in der Fantasy-Welt Valdermoor. Antworte IMMER auf Deutsch.
-Regeln:
-- Halte Beschreibungen kurz: 2 bis 3 Sätze.
-- Wenn der Spieler würfeln muss, schreibe [WÜRFEL: W20] oder [WÜRFEL: W6] usw.
-- Wenn der Spieler etwas findet, schreibe [ITEM: Name des Gegenstands].
-- Zu Beginn frage nach Name und Klasse des Charakters.`;
+const DM_SYSTEM_PROMPT = `Du bist Dungeon Master in Valdermoor. Regeln:
+1. Antworte NUR auf Deutsch, max. 3 Sätze.
+2. Zuerst Frage: Wie heißt du und welche Klasse? (Krieger/Magier/Dieb/Waldläufer).
+3. Würfeln: [WÜRFEL: W20]. Fund: [ITEM: Kurzschwert].
+4. Bleib immer im Rollenspiel. Keine Meta-Kommentare, kein "Entschuldigung".`;
 
 const API_URL = 'http://localhost:1234/v1/chat/completions';
 

@@ -5,7 +5,42 @@
       "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
       "Bash(dir \"c:\\\\\\\\Users\\\\\\\\angel\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\Game\")",
       "Bash(git config *)",
-      "Bash(curl -s -X POST http://localhost:1234/v1/chat/completions -H \"Content-Type: application/json\" --data-binary @/c/llama/prompt.json)"
+      "Bash(curl *)",
+      "Bash(taskkill *)",
+      "Bash(tasklist *)",
+      "Bash(wmic *)",
+      "Bash(ls *)",
+      "Bash(ls)",
+      "Bash(cat *)",
+      "Bash(stat *)",
+      "Bash(du *)",
+      "Bash(df *)",
+      "Bash(tail *)",
+      "Bash(head *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(echo *)",
+      "Bash(sleep *)",
+      "Bash(until *)",
+      "Bash(time *)",
+      "Bash(/c/llama/llama-server.exe *)",
+      "Bash(cd /c/llama && ./llama-server.exe *)",
+      "Bash(./llama-server.exe *)",
+      "Bash(npm install)",
+      "Bash(npm install *)",
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run *)",
+      "Bash(npm create vite@latest *)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\" && *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -rf /*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)"
     ]
   }
 }
