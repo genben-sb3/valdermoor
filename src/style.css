@@ -665,6 +665,8 @@ button { font-family: var(--font-body); cursor: pointer; }
   overflow-y: auto;
 }
 .screen-overlay.hidden { display: none; }
+.screen-overlay[hidden] { display: none; }
+[hidden] { display: none !important; }
 
 .login-box {
   background: linear-gradient(180deg, #1a1410 0%, var(--panel) 100%);

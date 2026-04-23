@@ -170,42 +170,26 @@ function getSession(): string | null {
 
 function buildSystemPrompt(): string {
   const tone = {
-    kinder: [
-      'Zielgruppe: KINDER (6-10 Jahre).',
-      'Nutze EINFACHE Wörter und kurze Sätze.',
-      'Abenteuer sind freundlich: sprechende Tiere, Schatzsuche, Rätsel.',
-      'KEINE Gewalt, kein Blut, keine Angst-Elemente. Gegner können "entkommen" oder "einschlafen".',
-      'Sei ermutigend und positiv.',
-    ],
-    jugend: [
-      'Zielgruppe: Jugendliche.',
-      'Standard-Fantasy mit Spannung, aber nicht gruselig.',
-      'Kämpfe ohne grausame Details.',
-    ],
-    erwachsen: [
-      'Zielgruppe: Erwachsene.',
-      'Volle Fantasy-Welt mit Gefahren, Intrigen, moralischen Entscheidungen.',
-    ],
+    kinder: 'Zielgruppe: KINDER. Nutze einfache Wörter und kurze Sätze. Erzähle freundliche Abenteuer mit Schatzsuche, Rätseln oder sprechenden Tieren. Keine Gewalt, kein Blut, keine Angst-Elemente. Sei ermutigend.',
+    jugend: 'Zielgruppe: Jugendliche. Standard-Fantasy mit Spannung. Kämpfe ohne grausame Details.',
+    erwachsen: 'Zielgruppe: Erwachsene. Volle Fantasy-Welt mit Gefahren und moralischen Entscheidungen.',
   }[ageMode];
 
   const playerLines = players.map(
-    (p, i) => `- Spieler ${i + 1}: ${p.name} (${p.class}, HP ${p.hp}/${p.maxHp}, ` +
-      STAT_KEYS.map((k) => `${k} ${p.stats[k]}`).join(' ') + ')'
+    (p) => `- ${p.name}, ${p.class} (HP ${p.hp}/${p.maxHp})`
   ).join('\n');
 
   return [
-    'Du bist Dungeon Master (DM) in der Welt Valdermoor.',
-    'Regeln:',
-    '1. Antworte NUR auf Deutsch, max. 3 Sätze pro Zug.',
-    '2. Würfel-Aufforderung: [WÜRFEL: W20] oder [WÜRFEL: W6] usw.',
-    '3. Fundgegenstand für einen Spieler: [ITEM: Kurzschwert].',
-    '4. Bleibe IMMER im Rollenspiel. Du bist NICHT einer der Spieler. Keine Meta-Kommentare.',
-    '5. Sprich die Spieler direkt an. Wenn mehrere Spieler da sind, beziehe dich namentlich auf sie.',
+    'Du bist der Erzähler und Spielleiter einer D&D-Runde in Valdermoor.',
+    'Deine Aufgabe: lebendige Szenen schreiben. Antworte IMMER auf Deutsch in 2 bis 3 Sätzen.',
     '',
-    ...tone,
+    tone,
     '',
-    `Die Heldengruppe (${players.length} Spieler):`,
+    'Die Helden dieser Runde:',
     playerLines,
+    '',
+    'Sprich die Helden mit Namen an. Schreibe flüssigen Fließtext, keine Listen und keine Wiederholungen.',
+    'Du bist nicht einer der Helden — du bist die Welt selbst.',
   ].join('\n');
 }
 
