@@ -1,13 +1,85 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tmp-vite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <title>Valdermoor — Dein D&D Abenteuer</title>
   </head>
   <body>
-    <div id="app"></div>
+    <main id="app">
+      <aside id="character-panel">
+        <h2>Charakter</h2>
+        <div class="field">
+          <label>Name</label>
+          <div id="char-name" class="value">???</div>
+        </div>
+        <div class="field">
+          <label>Klasse</label>
+          <div id="char-class" class="value">???</div>
+        </div>
+        <div class="field">
+          <label>Lebenspunkte</label>
+          <div class="hp-row">
+            <span id="char-hp">20</span> / <span id="char-max-hp">20</span>
+          </div>
+          <div class="hp-bar-outer">
+            <div id="char-hp-bar" class="hp-bar-inner"></div>
+          </div>
+        </div>
+        <h3>Werte</h3>
+        <div class="stats-grid">
+          <div class="stat"><label>STR</label><span id="stat-STR">10</span></div>
+          <div class="stat"><label>DEX</label><span id="stat-DEX">10</span></div>
+          <div class="stat"><label>CON</label><span id="stat-CON">10</span></div>
+          <div class="stat"><label>INT</label><span id="stat-INT">10</span></div>
+          <div class="stat"><label>WIS</label><span id="stat-WIS">10</span></div>
+          <div class="stat"><label>CHA</label><span id="stat-CHA">10</span></div>
+        </div>
+      </aside>
+
+      <section id="chat-panel">
+        <header id="chat-header">
+          <h1>Valdermoor</h1>
+          <div id="status" class="status-ok">Bereit</div>
+        </header>
+        <div id="messages" role="log" aria-live="polite"></div>
+        <form id="input-form">
+          <textarea
+            id="input"
+            rows="2"
+            placeholder="Was tust du? (Enter zum Senden, Shift+Enter für neue Zeile)"
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" id="send-btn">Senden</button>
+        </form>
+      </section>
+
+      <aside id="side-panel">
+        <h2>Würfel</h2>
+        <div id="dice-grid">
+          <button type="button" class="dice-btn" data-sides="4">W4</button>
+          <button type="button" class="dice-btn" data-sides="6">W6</button>
+          <button type="button" class="dice-btn" data-sides="8">W8</button>
+          <button type="button" class="dice-btn" data-sides="10">W10</button>
+          <button type="button" class="dice-btn" data-sides="12">W12</button>
+          <button type="button" class="dice-btn" data-sides="20">W20</button>
+        </div>
+        <div id="dice-result" aria-live="polite"></div>
+
+        <h2>Inventar</h2>
+        <ul id="inventory-list">
+          <li class="empty">Noch nichts dabei…</li>
+        </ul>
+      </aside>
+    </main>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
