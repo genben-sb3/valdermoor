@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm --version)"
+      "Bash(npm --version)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
+      "Bash(dir \"c:\\\\\\\\Users\\\\\\\\angel\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\Game\")",
+      "Bash(git config *)"
     ]
   }
 }
