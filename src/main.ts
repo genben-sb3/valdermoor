@@ -1,8 +1,6 @@
 import './style.css';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
-import * as OTPAuth from 'otpauth';
-import QRCode from 'qrcode';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -36,11 +34,15 @@ interface InventoryItem {
 
 interface StoredAccount {
   username: string;
+  email: string;
   passwordHash: string;
   passwordSalt: string;
-  totpSecret: string;
   created: number;
 }
+
+type PendingAction =
+  | { kind: 'login'; username: string }
+  | { kind: 'register'; username: string; email: string; password: string };
 
 // ────────────────────────────────────────────────────────────
 // Constants
@@ -82,7 +84,9 @@ let activePlayerId: string = '';
 let messages: Message[] = [];
 const inventory: InventoryItem[] = [];
 let isGenerating = false;
-let pendingRegistration: { username: string; password: string; totpSecret: string } | null = null;
+let pendingAction: PendingAction | null = null;
+let pendingCode: string | null = null;
+let pendingCodeExpiry = 0;
 
 // ────────────────────────────────────────────────────────────
 // DOM helpers
@@ -117,25 +121,18 @@ function generateSalt(): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function generateTOTPSecret(): string {
-  return new OTPAuth.Secret({ size: 20 }).base32;
+function generateEmailCode(): string {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const num = ((bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) % 1000000;
+  return String(num).padStart(6, '0');
 }
 
-function buildTOTP(username: string, secret: string): OTPAuth.TOTP {
-  return new OTPAuth.TOTP({
-    issuer: 'Valdermoor D&D',
-    label: username,
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-    secret: OTPAuth.Secret.fromBase32(secret),
-  });
-}
-
-function verifyTOTP(secret: string, username: string, code: string): boolean {
-  const totp = buildTOTP(username, secret);
-  const delta = totp.validate({ token: code, window: 1 });
-  return delta !== null;
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  if (!domain) return email;
+  const shown = user.length <= 2 ? user : user.slice(0, 2) + '•••';
+  return `${shown}@${domain}`;
 }
 
 function loadAccounts(): Record<string, StoredAccount> {
@@ -246,12 +243,24 @@ function setupLoginTabs() {
 function clearLoginErrors() {
   $<HTMLDivElement>('#login-error').textContent = '';
   $<HTMLDivElement>('#register-error').textContent = '';
-  $<HTMLDivElement>('#register-totp-error').textContent = '';
+  $<HTMLDivElement>('#email-code-error').textContent = '';
+}
+
+async function triggerEmailCode(email: string) {
+  pendingCode = generateEmailCode();
+  pendingCodeExpiry = Date.now() + 5 * 60 * 1000;
+
+  $<HTMLDivElement>('#email-notif-to').textContent = `An: ${maskEmail(email)}`;
+  $<HTMLDivElement>('#email-code-display').textContent = pendingCode;
+  $<HTMLInputElement>('#email-code-input').value = '';
+  $<HTMLDivElement>('#email-code-error').textContent = '';
+
+  $<HTMLDivElement>('#email-code-modal').hidden = false;
+  setTimeout(() => $<HTMLInputElement>('#email-code-input').focus(), 50);
 }
 
 function setupLoginForm() {
   const form = $<HTMLFormElement>('#login-form');
-  const totpField = $<HTMLDivElement>('#login-totp-field');
   const errEl = $<HTMLDivElement>('#login-error');
 
   form.addEventListener('submit', async (e) => {
@@ -260,7 +269,6 @@ function setupLoginForm() {
 
     const user = $<HTMLInputElement>('#login-user').value.trim();
     const pass = $<HTMLInputElement>('#login-pass').value;
-    const code = $<HTMLInputElement>('#login-totp').value.trim();
 
     if (!user || !pass) {
       errEl.textContent = 'Bitte Benutzername und Passwort eingeben.';
@@ -280,39 +288,29 @@ function setupLoginForm() {
       return;
     }
 
-    if (totpField.hidden) {
-      totpField.hidden = false;
-      $<HTMLInputElement>('#login-totp').focus();
-      errEl.textContent = '';
-      return;
-    }
-
-    if (!code || !/^\d{6}$/.test(code)) {
-      errEl.textContent = 'Bitte 6-stelligen Code aus der App eingeben.';
-      return;
-    }
-
-    if (!verifyTOTP(acct.totpSecret, user, code)) {
-      errEl.textContent = '2FA-Code ist falsch oder abgelaufen.';
-      return;
-    }
-
-    setSession(acct.username);
-    onLoggedIn();
+    pendingAction = { kind: 'login', username: acct.username };
+    await triggerEmailCode(acct.email);
   });
 }
 
 function setupRegisterForm() {
+  const form = $<HTMLFormElement>('#register-form');
   const errEl = $<HTMLDivElement>('#register-error');
-  const totpErrEl = $<HTMLDivElement>('#register-totp-error');
 
-  $<HTMLButtonElement>('#reg-next-btn').addEventListener('click', async () => {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
     errEl.textContent = '';
+
     const user = $<HTMLInputElement>('#reg-user').value.trim();
+    const email = $<HTMLInputElement>('#reg-email').value.trim();
     const pass = $<HTMLInputElement>('#reg-pass').value;
 
     if (!user || user.length < 3) {
       errEl.textContent = 'Benutzername muss mindestens 3 Zeichen haben.';
+      return;
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = 'Bitte eine gültige E-Mail-Adresse eingeben.';
       return;
     }
     if (!pass || pass.length < 6) {
@@ -326,56 +324,63 @@ function setupRegisterForm() {
       return;
     }
 
-    const secret = generateTOTPSecret();
-    pendingRegistration = { username: user, password: pass, totpSecret: secret };
+    pendingAction = { kind: 'register', username: user, email, password: pass };
+    await triggerEmailCode(email);
+  });
+}
 
-    const totp = buildTOTP(user, secret);
-    const uri = totp.toString();
-    try {
-      const dataUrl = await QRCode.toDataURL(uri, { width: 200, margin: 1 });
-      const img = new Image();
-      img.src = dataUrl;
-      img.alt = 'QR-Code für Authenticator';
-      const container = $<HTMLDivElement>('#qr-container');
-      container.innerHTML = '';
-      container.appendChild(img);
-    } catch (e) {
-      console.error('QR generation failed', e);
-    }
+function setupEmailCodeModal() {
+  const form = $<HTMLFormElement>('#email-code-form');
+  const input = $<HTMLInputElement>('#email-code-input');
+  const errEl = $<HTMLDivElement>('#email-code-error');
+  const cancelBtn = $<HTMLButtonElement>('#email-code-cancel');
 
-    $<HTMLElement>('#totp-secret-text').textContent = secret;
-
-    $$<HTMLElement>('.register-step').forEach((s) => {
-      s.hidden = s.getAttribute('data-step') !== '2';
-    });
+  cancelBtn.addEventListener('click', () => {
+    pendingAction = null;
+    pendingCode = null;
+    $<HTMLDivElement>('#email-code-modal').hidden = true;
   });
 
-  $<HTMLButtonElement>('#reg-finish-btn').addEventListener('click', async () => {
-    totpErrEl.textContent = '';
-    if (!pendingRegistration) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.textContent = '';
 
-    const code = $<HTMLInputElement>('#reg-totp').value.trim();
+    const code = input.value.trim();
     if (!/^\d{6}$/.test(code)) {
-      totpErrEl.textContent = 'Bitte 6-stelligen Code eingeben.';
+      errEl.textContent = 'Bitte 6-stelligen Code eingeben.';
       return;
     }
-    if (!verifyTOTP(pendingRegistration.totpSecret, pendingRegistration.username, code)) {
-      totpErrEl.textContent = 'Code stimmt nicht. Prüfe deine App.';
+    if (!pendingCode || Date.now() > pendingCodeExpiry) {
+      errEl.textContent = 'Code abgelaufen. Bitte erneut anmelden.';
+      return;
+    }
+    if (code !== pendingCode) {
+      errEl.textContent = 'Code ist falsch.';
+      return;
+    }
+    if (!pendingAction) {
+      errEl.textContent = 'Keine ausstehende Aktion.';
       return;
     }
 
-    const salt = generateSalt();
-    const passwordHash = await hashPassword(pendingRegistration.password, salt);
+    if (pendingAction.kind === 'register') {
+      const salt = generateSalt();
+      const passwordHash = await hashPassword(pendingAction.password, salt);
+      saveAccount({
+        username: pendingAction.username,
+        email: pendingAction.email,
+        passwordHash,
+        passwordSalt: salt,
+        created: Date.now(),
+      });
+      setSession(pendingAction.username);
+    } else {
+      setSession(pendingAction.username);
+    }
 
-    saveAccount({
-      username: pendingRegistration.username,
-      passwordHash,
-      passwordSalt: salt,
-      totpSecret: pendingRegistration.totpSecret,
-      created: Date.now(),
-    });
-    setSession(pendingRegistration.username);
-    pendingRegistration = null;
+    pendingAction = null;
+    pendingCode = null;
+    $<HTMLDivElement>('#email-code-modal').hidden = true;
     onLoggedIn();
   });
 }
@@ -1016,6 +1021,7 @@ function init() {
   setupLoginTabs();
   setupLoginForm();
   setupRegisterForm();
+  setupEmailCodeModal();
   setupModal();
   setupDiceButtons();
   setupInputForm();

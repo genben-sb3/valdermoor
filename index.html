@@ -34,50 +34,66 @@
             <label for="login-pass">Passwort</label>
             <input type="password" id="login-pass" autocomplete="current-password" required />
           </div>
-          <div class="modal-field" id="login-totp-field" hidden>
-            <label for="login-totp">2FA-Code (aus deiner Authenticator-App)</label>
-            <input type="text" id="login-totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
-          </div>
           <div class="login-error" id="login-error"></div>
           <button type="submit" class="btn-primary">Anmelden</button>
         </form>
 
         <!-- REGISTER TAB -->
         <form id="register-form" class="tab-panel" hidden>
-          <div class="register-step" data-step="1">
-            <div class="modal-field">
-              <label for="reg-user">Benutzername</label>
-              <input type="text" id="reg-user" autocomplete="username" required />
-            </div>
-            <div class="modal-field">
-              <label for="reg-pass">Passwort (min. 6 Zeichen)</label>
-              <input type="password" id="reg-pass" autocomplete="new-password" minlength="6" required />
-            </div>
-            <div class="login-error" id="register-error"></div>
-            <button type="button" id="reg-next-btn" class="btn-primary">Weiter → 2FA einrichten</button>
+          <div class="modal-field">
+            <label for="reg-user">Benutzername</label>
+            <input type="text" id="reg-user" autocomplete="username" required />
           </div>
-
-          <div class="register-step" data-step="2" hidden>
-            <p class="reg-hint">
-              Scanne diesen QR-Code mit deiner Authenticator-App (Google Authenticator, Microsoft Authenticator, Authy…):
-            </p>
-            <div id="qr-container"></div>
-            <details>
-              <summary>Code nicht scannbar? Manuell eingeben</summary>
-              <code id="totp-secret-text"></code>
-            </details>
-            <div class="modal-field">
-              <label for="reg-totp">Bestätige mit dem 6-stelligen Code aus der App:</label>
-              <input type="text" id="reg-totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
-            </div>
-            <div class="login-error" id="register-totp-error"></div>
-            <button type="button" id="reg-finish-btn" class="btn-primary">Konto erstellen</button>
+          <div class="modal-field">
+            <label for="reg-email">E-Mail-Adresse</label>
+            <input type="email" id="reg-email" autocomplete="email" placeholder="z.B. ben@example.com" required />
           </div>
+          <div class="modal-field">
+            <label for="reg-pass">Passwort (min. 6 Zeichen)</label>
+            <input type="password" id="reg-pass" autocomplete="new-password" minlength="6" required />
+          </div>
+          <div class="login-error" id="register-error"></div>
+          <button type="submit" class="btn-primary">Registrieren</button>
         </form>
 
         <p class="login-footer">
-          Lokal im Browser. Nichts wird ins Internet geschickt.
+          Lokal im Browser. Passwörter werden gehasht gespeichert (SHA-256 + Salt).
         </p>
+      </div>
+    </div>
+
+    <!-- E-MAIL-CODE MODAL (2FA-Schritt) -->
+    <div id="email-code-modal" class="screen-overlay" hidden>
+      <div class="email-notif">
+        <div class="email-notif-header">
+          <span class="email-notif-icon">✉️</span>
+          <div>
+            <div class="email-notif-title">E-Mail erhalten</div>
+            <div class="email-notif-from" id="email-notif-to">An: </div>
+          </div>
+        </div>
+        <div class="email-notif-body">
+          <p>Hallo,</p>
+          <p>dein Bestätigungscode für die Anmeldung bei <strong>Valdermoor</strong> lautet:</p>
+          <div class="email-code-display" id="email-code-display">000000</div>
+          <p class="email-notif-sub">Gültig für 5 Minuten. Wenn du diese E-Mail nicht erwartet hast, ignoriere sie bitte.</p>
+        </div>
+
+        <div class="demo-disclaimer">
+          🔧 <strong>Demo-Modus:</strong> In dieser lokalen Schul-Demo wird der Code direkt hier angezeigt. In einer echten Anwendung käme er nur per E-Mail im Posteingang an.
+        </div>
+
+        <form id="email-code-form">
+          <div class="modal-field">
+            <label for="email-code-input">Code hier eingeben</label>
+            <input type="text" id="email-code-input" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+          </div>
+          <div class="login-error" id="email-code-error"></div>
+          <div class="email-modal-actions">
+            <button type="button" id="email-code-cancel" class="btn-secondary">Abbrechen</button>
+            <button type="submit" class="btn-primary">Bestätigen</button>
+          </div>
+        </form>
       </div>
     </div>
 
