@@ -84,7 +84,7 @@ async function sendToLMStudio(userText: string) {
         messages,
         stream: true,
         temperature: 0.8,
-        max_tokens: 250,
+        max_tokens: 150,
       }),
     });
 
