@@ -4,7 +4,8 @@
       "Bash(npm --version)",
       "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
       "Bash(dir \"c:\\\\\\\\Users\\\\\\\\angel\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\Game\")",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(curl -s -X POST http://localhost:1234/v1/chat/completions -H \"Content-Type: application/json\" --data-binary @/c/llama/prompt.json)"
     ]
   }
 }
