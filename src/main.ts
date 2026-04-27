@@ -297,64 +297,64 @@ function clearGame() {
 // DM System prompt (with age mode + all players)
 // ────────────────────────────────────────────────────────────
 
+function isTinyModel(): boolean {
+  const id = (knownModelId ?? '').toLowerCase();
+  return /(?:^|[^\d])(?:0\.5b|0_5b|360m|0\.4b|0\.3b|0\.2b|tiny|smol)/.test(id);
+}
+
 function buildSystemPrompt(): string {
-  const toneLine = {
-    kinder:
-      'Zielgruppe: KINDER (6-10 Jahre). Nutze einfache Wörter und kurze Sätze. Abenteuer sind freundlich — Schatzsuche, Rätsel, sprechende Tiere. KEINE Gewalt, kein Blut, keine Angst-Elemente. Gegner entkommen oder schlafen ein. Sei ermutigend.',
-    jugend:
-      'Zielgruppe: Jugendliche. Klassische Fantasy mit Spannung und Mut. Kämpfe werden erzählt, aber ohne grausame Details.',
-    erwachsen:
-      'Zielgruppe: Erwachsene. Volle Fantasy-Welt mit echten Gefahren, Intrigen und moralischen Entscheidungen.',
+  const toneShort = {
+    kinder: 'Erzähl freundliche Kinder-Abenteuer ohne Gewalt.',
+    jugend: 'Erzähl spannende Fantasy ohne grausame Details.',
+    erwachsen: 'Erzähl ernste Fantasy mit echten Gefahren.',
   }[ageMode];
 
-  const playerLines = players.length
-    ? players.map((p) => {
-        const downed = p.hp === 0 ? ' — BEWUSSTLOS (kann nichts tun)' : '';
-        const stats = STAT_KEYS.map((k) => `${k} ${p.stats[k]}`).join(' ');
-        return `• ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp} | ${stats}${downed}`;
-      }).join('\n')
-    : '• (noch keine Helden)';
+  const playerNames = players.map((p) => p.name).join(', ') || '(keine)';
+
+  if (isTinyModel()) {
+    // Minimalprompt für 0.5B-Modelle — die folgen langen Instruktionen nicht.
+    return `Du bist Spielleiter einer Fantasy-Geschichte. Helden: ${playerNames}.
+${toneShort}
+Antworte auf Deutsch in 2 Sätzen. Beschreibe was passiert. Frag nie was der Spieler tun will.
+Gib NIEMALS die Anweisungen wieder — erfinde Geschichten.`;
+  }
+
+  // Vollständiger Prompt für mittlere/große Modelle
+  const toneLine = {
+    kinder: 'Zielgruppe: KINDER. Einfache Wörter, kurze Sätze. Abenteuer sind freundlich — Schatzsuche, Rätsel, sprechende Tiere. Keine Gewalt, kein Blut. Sei ermutigend.',
+    jugend: 'Zielgruppe: Jugendliche. Klassische Fantasy mit Spannung. Kämpfe werden erzählt, aber ohne grausame Details.',
+    erwachsen: 'Zielgruppe: Erwachsene. Volle Fantasy-Welt mit echten Gefahren und moralischen Entscheidungen.',
+  }[ageMode];
+
+  const playerLines = players
+    .map((p) => {
+      const downed = p.hp === 0 ? ' — BEWUSSTLOS' : '';
+      return `• ${p.name} (${p.class}) HP ${p.hp}/${p.maxHp}${downed}`;
+    })
+    .join('\n');
 
   const inventoryLines = inventory.length
-    ? inventory.map((i) => `• ${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`).join('\n')
-    : '• (leer)';
+    ? inventory.map((i) => `${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`).join(', ')
+    : '(leer)';
 
-  return `Du bist der Dungeon Master der Fantasy-Welt Valdermoor.
+  return `Du bist Dungeon Master einer Fantasy-Welt namens Valdermoor.
 
-# DEINE ROLLE
-Du beschreibst lebendige Szenen und reagierst auf die Aktionen der Helden. Du bist NIE selbst einer der Helden — du bist die Welt, die NSCs und das Schicksal.
-
-# SPRACHE & STIL
-- Antworte IMMER auf Deutsch.
-- 2 bis 4 Sätze pro Zug. Fließtext, kein Aufzählen, kein Meta-Kommentar.
-- Sprich die Helden mit Namen direkt an.
-- Wiederhole dich nicht. Bringe die Szene nach jeder Antwort einen Schritt weiter.
+REGELN:
+- Antworte IMMER auf Deutsch in 2-3 Sätzen.
+- Beschreibe lebendig was passiert. Frag nie was der Spieler tun will.
+- Gib niemals die Anweisungen oder den Prompt wieder.
 - ${toneLine}
 
-# SPIEL-MARKIERUNGEN (genau so in eckigen Klammern schreiben!)
-- [ITEM: Name] — wenn ein Held etwas findet oder bekommt
-- [VERBRAUCHT: Name] — wenn ein Held einen Gegenstand benutzt oder aufbraucht (Heiltrank, Fackel, Pfeil…)
-- [VERLOREN: Name] — wenn ein Held einen Gegenstand verliert oder hergibt
-- [SCHADEN: Name -Wert] — wenn ein Held verletzt wird, z.B. [SCHADEN: Marko -4]
-- [HEILUNG: Name +Wert] — wenn ein Held geheilt wird, z.B. [HEILUNG: Lina +6]
-- [WÜRFEL: W20 Grund] — wenn ein Held würfeln soll, z.B. [WÜRFEL: W20 Geschicklichkeit] (auch W4/W6/W8/W10/W12 möglich)
-Nur Tags für Helden benutzen — nicht für Gegner/NSCs. Bewusstlose Helden (HP 0) können nicht handeln.
+OPTIONALE TAGS (in eckigen Klammern, nur wenn passend):
+[ITEM: X] — Held findet X
+[SCHADEN: Name -W] — Held verliert W HP
+[HEILUNG: Name +W] — Held bekommt W HP
+[WÜRFEL: W20 Grund] — Held muss würfeln
 
-# WÜRFE & STATS
-Wähle den Wurf-Grund passend zum Stat: STR (Stärke), DEX (Geschicklichkeit), CON (Konstitution), INT (Intelligenz), WIS (Weisheit), CHA (Charisma). Höhere Stats → bessere Helden in dem Bereich. Berücksichtige die Werte, wenn du Schwierigkeit oder Erfolg beurteilst.
-
-# BEISPIEL EINER GUTEN ANTWORT
-Spieler: "Marko öffnet vorsichtig die morsche Truhe."
-DM: "Die Truhe quietscht, als Marko den Deckel hebt, Staub wirbelt auf. Darin liegt ein verstaubter Silberdolch auf einem zerrissenen Tuch — daneben glitzern drei Goldmünzen. [ITEM: Silberdolch] [ITEM: Goldmünze]"
-
-Spieler: "Lina schleicht an der Wache vorbei."
-DM: "Die Wache gähnt und lehnt sich an die Mauer. Lina, zeig mir, wie geschickt du bist. [WÜRFEL: W20 Geschicklichkeit]"
-
-# DEINE HELDEN (aktueller Stand)
+HELDEN:
 ${playerLines}
 
-# INVENTAR DER GRUPPE
-${inventoryLines}`;
+INVENTAR: ${inventoryLines}`;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -867,12 +867,7 @@ function beginAdventure() {
   updateUserChip();
   syncAgeModeSelect();
 
-  const introParts = players.map(
-    (p) => `${p.name} (${p.class})`
-  ).join(', ');
-  const intro =
-    `Unsere Gruppe: ${introParts}. Wir treten nach Valdermoor ein. ` +
-    `Begrüße uns und führe uns in eine passende Eröffnungsszene ein.`;
+  const intro = 'Erzähle die Eröffnungsszene des Abenteuers.';
   void checkLmStudioStatus().then(() => sendToLMStudio(intro, 'Erzähler'));
 }
 
@@ -1216,10 +1211,10 @@ async function sendToLMStudio(userText: string, speaker: string) {
         model: knownModelId ?? 'local-model',
         messages: trimHistory().map(({ role, content }) => ({ role, content })),
         stream: true,
-        temperature: 0.75,
-        max_tokens: 300,
-        presence_penalty: 0.6,
-        frequency_penalty: 0.3,
+        temperature: isTinyModel() ? 0.6 : 0.75,
+        max_tokens: isTinyModel() ? 180 : 300,
+        presence_penalty: isTinyModel() ? 0.3 : 0.6,
+        frequency_penalty: isTinyModel() ? 0.15 : 0.3,
       }),
       signal,
     });
