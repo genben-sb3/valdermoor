@@ -169,28 +169,53 @@ function getSession(): string | null {
 // ────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(): string {
-  const tone = {
-    kinder: 'Zielgruppe: KINDER. Nutze einfache Wörter und kurze Sätze. Erzähle freundliche Abenteuer mit Schatzsuche, Rätseln oder sprechenden Tieren. Keine Gewalt, kein Blut, keine Angst-Elemente. Sei ermutigend.',
-    jugend: 'Zielgruppe: Jugendliche. Standard-Fantasy mit Spannung. Kämpfe ohne grausame Details.',
-    erwachsen: 'Zielgruppe: Erwachsene. Volle Fantasy-Welt mit Gefahren und moralischen Entscheidungen.',
+  const toneLine = {
+    kinder:
+      'Zielgruppe: KINDER (6-10 Jahre). Nutze einfache Wörter und kurze Sätze. Abenteuer sind freundlich — Schatzsuche, Rätsel, sprechende Tiere. KEINE Gewalt, kein Blut, keine Angst-Elemente. Gegner entkommen oder schlafen ein. Sei ermutigend.',
+    jugend:
+      'Zielgruppe: Jugendliche. Klassische Fantasy mit Spannung und Mut. Kämpfe werden erzählt, aber ohne grausame Details.',
+    erwachsen:
+      'Zielgruppe: Erwachsene. Volle Fantasy-Welt mit echten Gefahren, Intrigen und moralischen Entscheidungen.',
   }[ageMode];
 
-  const playerLines = players.map(
-    (p) => `- ${p.name}, ${p.class} (HP ${p.hp}/${p.maxHp})`
-  ).join('\n');
+  const playerLines = players.length
+    ? players.map((p) => `• ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp}`).join('\n')
+    : '• (noch keine Helden)';
 
-  return [
-    'Du bist der Erzähler und Spielleiter einer D&D-Runde in Valdermoor.',
-    'Deine Aufgabe: lebendige Szenen schreiben. Antworte IMMER auf Deutsch in 2 bis 3 Sätzen.',
-    '',
-    tone,
-    '',
-    'Die Helden dieser Runde:',
-    playerLines,
-    '',
-    'Sprich die Helden mit Namen an. Schreibe flüssigen Fließtext, keine Listen und keine Wiederholungen.',
-    'Du bist nicht einer der Helden — du bist die Welt selbst.',
-  ].join('\n');
+  const inventoryLines = inventory.length
+    ? inventory.map((i) => `• ${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`).join('\n')
+    : '• (leer)';
+
+  return `Du bist der Dungeon Master der Fantasy-Welt Valdermoor.
+
+# DEINE ROLLE
+Du beschreibst lebendige Szenen und reagierst auf die Aktionen der Helden. Du bist NIE selbst einer der Helden — du bist die Welt, die NSCs und das Schicksal.
+
+# SPRACHE & STIL
+- Antworte IMMER auf Deutsch.
+- 2 bis 4 Sätze pro Zug. Fließtext, kein Aufzählen, kein Meta-Kommentar.
+- Sprich die Helden mit Namen direkt an.
+- Wiederhole dich nicht. Bringe die Szene nach jeder Antwort einen Schritt weiter.
+- ${toneLine}
+
+# SPIEL-MARKIERUNGEN (genau so in eckigen Klammern schreiben!)
+- [ITEM: Name] — wenn ein Held etwas findet oder bekommt
+- [SCHADEN: Name -Wert] — wenn ein Held verletzt wird, z.B. [SCHADEN: Marko -4]
+- [HEILUNG: Name +Wert] — wenn ein Held geheilt wird, z.B. [HEILUNG: Lina +6]
+- [WÜRFEL: W20 Grund] — wenn ein Held würfeln soll, z.B. [WÜRFEL: W20 Geschicklichkeit] (auch W4/W6/W8/W10/W12 möglich)
+
+# BEISPIEL EINER GUTEN ANTWORT
+Spieler: "Marko öffnet vorsichtig die morsche Truhe."
+DM: "Die Truhe quietscht, als Marko den Deckel hebt, Staub wirbelt auf. Darin liegt ein verstaubter Silberdolch auf einem zerrissenen Tuch — daneben glitzern drei Goldmünzen. [ITEM: Silberdolch] [ITEM: Goldmünze]"
+
+Spieler: "Lina schleicht an der Wache vorbei."
+DM: "Die Wache gähnt und lehnt sich an die Mauer. Lina, zeig mir, wie geschickt du bist. [WÜRFEL: W20 Geschicklichkeit]"
+
+# DEINE HELDEN (aktueller Stand)
+${playerLines}
+
+# INVENTAR DER GRUPPE
+${inventoryLines}`;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -749,6 +774,13 @@ function setStatus(text: string, kind: 'ok' | 'error' | 'busy') {
   el.className = `status-${kind}`;
 }
 
+const MAX_HISTORY_MESSAGES = 14;
+
+function trimHistory(): Message[] {
+  if (messages.length <= MAX_HISTORY_MESSAGES + 1) return messages;
+  return [messages[0], ...messages.slice(-MAX_HISTORY_MESSAGES)];
+}
+
 async function sendToLMStudio(userText: string, speaker: string) {
   if (isGenerating) return;
   isGenerating = true;
@@ -764,6 +796,8 @@ async function sendToLMStudio(userText: string, speaker: string) {
     addPlayerBubble(speaker, userText, p?.color ?? '#888');
   }
 
+  messages[0] = { role: 'system', content: buildSystemPrompt() };
+
   const dmBody = addDMBubble('');
   let fullText = '';
 
@@ -773,10 +807,12 @@ async function sendToLMStudio(userText: string, speaker: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'local-model',
-        messages: messages.map(({ role, content }) => ({ role, content })),
+        messages: trimHistory().map(({ role, content }) => ({ role, content })),
         stream: true,
-        temperature: 0.8,
-        max_tokens: 150,
+        temperature: 0.75,
+        max_tokens: 300,
+        presence_penalty: 0.6,
+        frequency_penalty: 0.3,
       }),
     });
 
@@ -812,6 +848,26 @@ async function sendToLMStudio(userText: string, speaker: string) {
     }
     messages.push({ role: 'assistant', content: fullText });
     parseInventory(fullText);
+    parseDamage(fullText);
+    parseHeal(fullText);
+    const diceRequests = parseDiceRequests(fullText);
+    dmBody.textContent = stripGameTags(fullText);
+    const msgWrap = dmBody.parentElement as HTMLDivElement | null;
+    if (msgWrap && diceRequests.length) {
+      const row = document.createElement('div');
+      row.className = 'dice-request-row';
+      for (const req of diceRequests) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'dice-request-chip';
+        chip.textContent = req.reason
+          ? `🎲 W${req.sides} würfeln — ${req.reason}`
+          : `🎲 W${req.sides} würfeln`;
+        chip.addEventListener('click', () => rollDice(req.sides));
+        row.appendChild(chip);
+      }
+      msgWrap.appendChild(row);
+    }
     setStatus('Bereit', 'ok');
   } catch (err) {
     console.error(err);
@@ -867,6 +923,70 @@ function parseInventory(text: string) {
     changed = true;
   }
   if (changed) renderInventory();
+}
+
+function findPlayerByName(name: string): Player | undefined {
+  const needle = name.trim().toLowerCase();
+  return (
+    players.find((p) => p.name.toLowerCase() === needle) ??
+    players.find((p) => p.name.toLowerCase().startsWith(needle)) ??
+    players.find((p) => needle.startsWith(p.name.toLowerCase()))
+  );
+}
+
+function parseDamage(text: string) {
+  const regex = /\[SCHADEN:\s*([^\-\]]+?)\s*-\s*(\d{1,3})\s*\]/gi;
+  let match;
+  let changed = false;
+  while ((match = regex.exec(text)) !== null) {
+    const target = findPlayerByName(match[1]);
+    const amount = parseInt(match[2], 10);
+    if (target && amount > 0) {
+      target.hp = Math.max(0, target.hp - amount);
+      changed = true;
+    }
+  }
+  if (changed) renderPlayersSidebar();
+}
+
+function parseHeal(text: string) {
+  const regex = /\[HEILUNG:\s*([^\+\]]+?)\s*\+\s*(\d{1,3})\s*\]/gi;
+  let match;
+  let changed = false;
+  while ((match = regex.exec(text)) !== null) {
+    const target = findPlayerByName(match[1]);
+    const amount = parseInt(match[2], 10);
+    if (target && amount > 0) {
+      target.hp = Math.min(target.maxHp, target.hp + amount);
+      changed = true;
+    }
+  }
+  if (changed) renderPlayersSidebar();
+}
+
+const ALLOWED_DICE = new Set([4, 6, 8, 10, 12, 20, 100]);
+
+function parseDiceRequests(text: string): Array<{ sides: number; reason: string }> {
+  const regex = /\[W(?:ÜRFEL|URFEL|UERFEL):\s*W(\d{1,3})(?:\s+([^\]]+?))?\s*\]/gi;
+  const out: Array<{ sides: number; reason: string }> = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const sides = parseInt(match[1], 10);
+    if (!ALLOWED_DICE.has(sides)) continue;
+    out.push({ sides, reason: (match[2] ?? '').trim() });
+  }
+  return out;
+}
+
+function stripGameTags(text: string): string {
+  return text
+    .replace(/\[ITEM:\s*[^\]]+\]/gi, '')
+    .replace(/\[SCHADEN:\s*[^\]]+\]/gi, '')
+    .replace(/\[HEILUNG:\s*[^\]]+\]/gi, '')
+    .replace(/\[W(?:ÜRFEL|URFEL|UERFEL):\s*[^\]]+\]/gi, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .trim();
 }
 
 function renderInventory() {

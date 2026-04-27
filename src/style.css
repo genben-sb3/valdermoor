@@ -869,6 +869,33 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: #1a1a1a;
 }
 
+/* ========== DM Dice Requests ========== */
+.dice-request-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.dice-request-chip {
+  background: linear-gradient(180deg, #2a1f10 0%, #1a1308 100%);
+  border: 1px solid var(--gold, #c9a84c);
+  color: var(--gold, #c9a84c);
+  font-family: var(--font-body, inherit);
+  font-size: 0.9em;
+  padding: 6px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.dice-request-chip:hover {
+  background: linear-gradient(180deg, #3a2c18 0%, #241a0c 100%);
+  box-shadow: 0 0 12px rgba(201, 168, 76, 0.5);
+  transform: translateY(-1px);
+}
+.dice-request-chip:active {
+  transform: translateY(0);
+}
+
 /* ========== Scrollbars ========== */
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-track { background: #0a0806; }
