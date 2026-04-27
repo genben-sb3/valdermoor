@@ -869,6 +869,16 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: #1a1a1a;
 }
 
+/* ========== Stop button mode ========== */
+#send-btn.stop-mode {
+  background: linear-gradient(180deg, #4a1a1a 0%, #2a0e0e 100%) !important;
+  border-color: #c94c4c !important;
+  color: #ffb8b8 !important;
+}
+#send-btn.stop-mode:hover {
+  box-shadow: 0 0 12px rgba(201, 76, 76, 0.55);
+}
+
 /* ========== Downed player ========== */
 .player-card.downed {
   opacity: 0.55;

@@ -42,11 +42,14 @@ interface InventoryItem {
   quantity: number;
 }
 
+type PasswordAlgo = 'sha256-v1' | 'pbkdf2-v2';
+
 interface StoredAccount {
   username: string;
   email: string;
   passwordHash: string;
   passwordSalt: string;
+  passwordAlgo?: PasswordAlgo;
   created: number;
 }
 
@@ -127,13 +130,61 @@ function uid(): string {
 // Crypto / Auth (Web Crypto API)
 // ────────────────────────────────────────────────────────────
 
-async function hashPassword(password: string, salt: string): Promise<string> {
+const PBKDF2_ITERATIONS = 100_000;
+
+async function hashPasswordLegacySha256(password: string, salt: string): Promise<string> {
   const enc = new TextEncoder();
   const data = enc.encode(salt + ':' + password);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+async function hashPasswordPBKDF2(password: string, salt: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: enc.encode(salt),
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256,
+  );
+  return Array.from(new Uint8Array(bits))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function verifyPassword(password: string, acct: StoredAccount): Promise<boolean> {
+  const algo: PasswordAlgo = acct.passwordAlgo ?? 'sha256-v1';
+  if (algo === 'pbkdf2-v2') {
+    const hash = await hashPasswordPBKDF2(password, acct.passwordSalt);
+    return hash === acct.passwordHash;
+  }
+  const hash = await hashPasswordLegacySha256(password, acct.passwordSalt);
+  return hash === acct.passwordHash;
+}
+
+async function migrateLegacyHash(password: string, acct: StoredAccount): Promise<void> {
+  if (acct.passwordAlgo === 'pbkdf2-v2') return;
+  const newSalt = generateSalt();
+  const newHash = await hashPasswordPBKDF2(password, newSalt);
+  saveAccount({
+    ...acct,
+    passwordSalt: newSalt,
+    passwordHash: newHash,
+    passwordAlgo: 'pbkdf2-v2',
+  });
 }
 
 function generateSalt(): string {
@@ -449,11 +500,12 @@ function setupLoginForm() {
       return;
     }
 
-    const hash = await hashPassword(pass, acct.passwordSalt);
-    if (hash !== acct.passwordHash) {
+    const ok = await verifyPassword(pass, acct);
+    if (!ok) {
       errEl.textContent = 'Falsches Passwort.';
       return;
     }
+    void migrateLegacyHash(pass, acct);
 
     pendingAction = { kind: 'login', username: acct.username };
     await triggerEmailCode(acct.email);
@@ -532,12 +584,13 @@ function setupEmailCodeModal() {
 
     if (pendingAction.kind === 'register') {
       const salt = generateSalt();
-      const passwordHash = await hashPassword(pendingAction.password, salt);
+      const passwordHash = await hashPasswordPBKDF2(pendingAction.password, salt);
       saveAccount({
         username: pendingAction.username,
         email: pendingAction.email,
         passwordHash,
         passwordSalt: salt,
+        passwordAlgo: 'pbkdf2-v2',
         created: Date.now(),
       });
       setSession(pendingAction.username);
@@ -994,11 +1047,26 @@ function trimHistory(): Message[] {
   ];
 }
 
+function setSendButtonMode(mode: 'send' | 'stop') {
+  const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+  if (!sendBtn) return;
+  if (mode === 'stop') {
+    sendBtn.disabled = false;
+    sendBtn.type = 'button';
+    sendBtn.textContent = '⏹ Stop';
+    sendBtn.classList.add('stop-mode');
+  } else {
+    sendBtn.disabled = false;
+    sendBtn.type = 'submit';
+    sendBtn.textContent = 'Senden';
+    sendBtn.classList.remove('stop-mode');
+  }
+}
+
 async function sendToLMStudio(userText: string, speaker: string) {
   if (isGenerating) return;
   isGenerating = true;
-  const sendBtn = $<HTMLButtonElement>('#send-btn');
-  sendBtn.disabled = true;
+  setSendButtonMode('stop');
   setStatus('Der DM denkt nach…', 'busy');
 
   const decorated = speaker === 'Erzähler' ? userText : `${speaker}: ${userText}`;
@@ -1109,7 +1177,7 @@ async function sendToLMStudio(userText: string, speaker: string) {
   } finally {
     isGenerating = false;
     currentAbortController = null;
-    sendBtn.disabled = false;
+    setSendButtonMode('send');
     $<HTMLTextAreaElement>('#input').focus();
   }
 }
@@ -1364,16 +1432,25 @@ function setupInputForm() {
   const form = $<HTMLFormElement>('#input-form');
   const input = $<HTMLTextAreaElement>('#input');
   const sel = $<HTMLSelectElement>('#player-select');
+  const sendBtn = $<HTMLButtonElement>('#send-btn');
 
   sel.addEventListener('change', () => {
     activePlayerId = sel.value;
     renderPlayersSidebar();
   });
 
+  sendBtn.addEventListener('click', (e) => {
+    if (isGenerating) {
+      e.preventDefault();
+      currentAbortController?.abort();
+    }
+  });
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (isGenerating) return;
     const text = input.value.trim();
-    if (!text || isGenerating) return;
+    if (!text) return;
     const p = players.find((x) => x.id === activePlayerId);
     if (!p) return;
     input.value = '';
