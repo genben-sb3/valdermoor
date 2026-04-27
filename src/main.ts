@@ -1,8 +1,18 @@
 import './style.css';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+type PdfJsModule = typeof import('pdfjs-dist');
+let pdfJsCache: PdfJsModule | null = null;
+
+async function getPdfJs(): Promise<PdfJsModule> {
+  if (pdfJsCache) return pdfJsCache;
+  const [pdfjsLib, workerMod] = await Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.mjs?url'),
+  ]);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = (workerMod as { default: string }).default;
+  pdfJsCache = pdfjsLib;
+  return pdfjsLib;
+}
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -44,6 +54,15 @@ type PendingAction =
   | { kind: 'login'; username: string }
   | { kind: 'register'; username: string; email: string; password: string };
 
+interface GameSave {
+  ageMode: AgeMode;
+  players: Player[];
+  inventory: InventoryItem[];
+  activePlayerId: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; speaker?: string }>;
+  savedAt: number;
+}
+
 // ────────────────────────────────────────────────────────────
 // Constants
 // ────────────────────────────────────────────────────────────
@@ -52,6 +71,7 @@ const API_URL = 'http://localhost:1234/v1/chat/completions';
 const STAT_KEYS: StatKey[] = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
 const ACCOUNTS_KEY = 'valdermoor:accounts';
 const SESSION_KEY = 'valdermoor:session';
+const GAME_KEY_PREFIX = 'valdermoor:game:';
 const MAX_PLAYERS = 4;
 
 const PLAYER_COLORS = [
@@ -84,6 +104,7 @@ let activePlayerId: string = '';
 let messages: Message[] = [];
 const inventory: InventoryItem[] = [];
 let isGenerating = false;
+let currentAbortController: AbortController | null = null;
 let pendingAction: PendingAction | null = null;
 let pendingCode: string | null = null;
 let pendingCodeExpiry = 0;
@@ -165,6 +186,56 @@ function getSession(): string | null {
 }
 
 // ────────────────────────────────────────────────────────────
+// Game persistence (per-user save in localStorage)
+// ────────────────────────────────────────────────────────────
+
+function gameKey(): string | null {
+  return currentUser ? GAME_KEY_PREFIX + currentUser.toLowerCase() : null;
+}
+
+function saveGame() {
+  const key = gameKey();
+  if (!key) return;
+  if (players.length === 0) return;
+  const save: GameSave = {
+    ageMode,
+    players,
+    inventory: [...inventory],
+    activePlayerId,
+    messages: messages.slice(1).map((m) => ({
+      role: m.role === 'system' ? 'user' : (m.role as 'user' | 'assistant'),
+      content: m.content,
+      speaker: m.speaker,
+    })),
+    savedAt: Date.now(),
+  };
+  try {
+    localStorage.setItem(key, JSON.stringify(save));
+  } catch (e) {
+    console.warn('Spielstand konnte nicht gespeichert werden:', e);
+  }
+}
+
+function loadGame(): GameSave | null {
+  const key = gameKey();
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as GameSave;
+    if (!data || !Array.isArray(data.players) || data.players.length === 0) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function clearGame() {
+  const key = gameKey();
+  if (key) localStorage.removeItem(key);
+}
+
+// ────────────────────────────────────────────────────────────
 // DM System prompt (with age mode + all players)
 // ────────────────────────────────────────────────────────────
 
@@ -179,7 +250,10 @@ function buildSystemPrompt(): string {
   }[ageMode];
 
   const playerLines = players.length
-    ? players.map((p) => `• ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp}`).join('\n')
+    ? players.map((p) => {
+        const downed = p.hp === 0 ? ' — BEWUSSTLOS (kann nichts tun)' : '';
+        return `• ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp}${downed}`;
+      }).join('\n')
     : '• (noch keine Helden)';
 
   const inventoryLines = inventory.length
@@ -200,9 +274,12 @@ Du beschreibst lebendige Szenen und reagierst auf die Aktionen der Helden. Du bi
 
 # SPIEL-MARKIERUNGEN (genau so in eckigen Klammern schreiben!)
 - [ITEM: Name] — wenn ein Held etwas findet oder bekommt
+- [VERBRAUCHT: Name] — wenn ein Held einen Gegenstand benutzt oder aufbraucht (Heiltrank, Fackel, Pfeil…)
+- [VERLOREN: Name] — wenn ein Held einen Gegenstand verliert oder hergibt
 - [SCHADEN: Name -Wert] — wenn ein Held verletzt wird, z.B. [SCHADEN: Marko -4]
 - [HEILUNG: Name +Wert] — wenn ein Held geheilt wird, z.B. [HEILUNG: Lina +6]
 - [WÜRFEL: W20 Grund] — wenn ein Held würfeln soll, z.B. [WÜRFEL: W20 Geschicklichkeit] (auch W4/W6/W8/W10/W12 möglich)
+Nur Tags für Helden benutzen — nicht für Gegner/NSCs. Bewusstlose Helden (HP 0) können nicht handeln.
 
 # BEISPIEL EINER GUTEN ANTWORT
 Spieler: "Marko öffnet vorsichtig die morsche Truhe."
@@ -255,16 +332,97 @@ function clearLoginErrors() {
   $<HTMLDivElement>('#email-code-error').textContent = '';
 }
 
+interface EmailJsConfig {
+  serviceId: string;
+  templateId: string;
+  publicKey: string;
+}
+
+function getEmailJsConfig(): EmailJsConfig | null {
+  const env = import.meta.env;
+  const serviceId = env.VITE_EMAILJS_SERVICE_ID as string | undefined;
+  const templateId = env.VITE_EMAILJS_TEMPLATE_ID as string | undefined;
+  const publicKey = env.VITE_EMAILJS_PUBLIC_KEY as string | undefined;
+  if (serviceId && templateId && publicKey) {
+    return { serviceId, templateId, publicKey };
+  }
+  return null;
+}
+
+async function sendCodeViaEmailJs(
+  cfg: EmailJsConfig,
+  toEmail: string,
+  code: string,
+): Promise<boolean> {
+  try {
+    const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: cfg.serviceId,
+        template_id: cfg.templateId,
+        user_id: cfg.publicKey,
+        template_params: {
+          to_email: toEmail,
+          email: toEmail,
+          code,
+          app_name: 'Valdermoor',
+          expiry_minutes: 5,
+        },
+      }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.warn('EmailJS-Versand fehlgeschlagen:', err);
+    return false;
+  }
+}
+
 async function triggerEmailCode(email: string) {
   pendingCode = generateEmailCode();
   pendingCodeExpiry = Date.now() + 5 * 60 * 1000;
 
   $<HTMLDivElement>('#email-notif-to').textContent = `An: ${maskEmail(email)}`;
-  $<HTMLDivElement>('#email-code-display').textContent = pendingCode;
   $<HTMLInputElement>('#email-code-input').value = '';
   $<HTMLDivElement>('#email-code-error').textContent = '';
-
   $<HTMLDivElement>('#email-code-modal').hidden = false;
+
+  const codeDisplay = $<HTMLDivElement>('#email-code-display');
+  const disclaimer = document.querySelector<HTMLDivElement>('.demo-disclaimer');
+  const subText = document.querySelector<HTMLParagraphElement>('.email-notif-body .email-notif-sub');
+
+  const cfg = getEmailJsConfig();
+  if (cfg) {
+    codeDisplay.textContent = '••••••';
+    codeDisplay.classList.add('sending');
+    if (disclaimer) disclaimer.hidden = true;
+    if (subText) subText.textContent = 'Code wird versendet…';
+
+    const sent = await sendCodeViaEmailJs(cfg, email, pendingCode);
+
+    codeDisplay.classList.remove('sending');
+    if (sent) {
+      codeDisplay.textContent = '✉ gesendet';
+      if (subText) {
+        subText.textContent = `Wir haben den 6-stelligen Code an ${maskEmail(email)} gesendet. Schau in dein Postfach (auch im Spam-Ordner). Gültig 5 Minuten.`;
+      }
+    } else {
+      codeDisplay.textContent = pendingCode;
+      if (disclaimer) {
+        disclaimer.hidden = false;
+        disclaimer.innerHTML =
+          '⚠ <strong>E-Mail-Versand fehlgeschlagen.</strong> Code wird ersatzweise hier angezeigt.';
+      }
+      if (subText) subText.textContent = 'Gültig für 5 Minuten.';
+    }
+  } else {
+    codeDisplay.textContent = pendingCode;
+    if (disclaimer) disclaimer.hidden = false;
+    if (subText) {
+      subText.textContent = 'Gültig für 5 Minuten. Wenn du diese E-Mail nicht erwartet hast, ignoriere sie bitte.';
+    }
+  }
+
   setTimeout(() => $<HTMLInputElement>('#email-code-input').focus(), 50);
 }
 
@@ -396,7 +554,12 @@ function setupEmailCodeModal() {
 
 function onLoggedIn() {
   hideLoginScreen();
-  showCharModal();
+  const save = loadGame();
+  if (save) {
+    resumeGame(save);
+  } else {
+    showCharModal();
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -632,6 +795,7 @@ function beginAdventure() {
   renderPlayersSidebar();
   renderPlayerSelector();
   updateUserChip();
+  syncAgeModeSelect();
 
   const introParts = players.map(
     (p) => `${p.name} (${p.class})`
@@ -642,11 +806,55 @@ function beginAdventure() {
   sendToLMStudio(intro, 'Erzähler');
 }
 
+function resumeGame(save: GameSave) {
+  ageMode = save.ageMode;
+  players = save.players;
+  inventory.length = 0;
+  inventory.push(...save.inventory);
+  activePlayerId = save.activePlayerId || (players[0]?.id ?? '');
+
+  messages = [{ role: 'system', content: buildSystemPrompt() }];
+  for (const m of save.messages) {
+    messages.push({ role: m.role, content: m.content, speaker: m.speaker });
+  }
+
+  hideCharModal();
+  $<HTMLElement>('#app').hidden = false;
+  renderMessagesArea(true);
+
+  for (const m of save.messages) {
+    if (m.role === 'user' && m.speaker && m.speaker !== 'Erzähler') {
+      const p = players.find((x) => x.name === m.speaker);
+      const prefix = m.speaker + ':';
+      const text = m.content.startsWith(prefix)
+        ? m.content.slice(prefix.length).trim()
+        : m.content;
+      addPlayerBubble(m.speaker, text, p?.color ?? '#888');
+    } else if (m.role === 'assistant') {
+      const dmBody = addDMBubble('');
+      dmBody.textContent = stripGameTags(m.content);
+    }
+  }
+
+  renderInventory();
+  renderPlayersSidebar();
+  renderPlayerSelector();
+  updateUserChip();
+  syncAgeModeSelect();
+  setStatus('Fortgesetzt', 'ok');
+}
+
+function syncAgeModeSelect() {
+  const sel = document.getElementById('age-mode-app') as HTMLSelectElement | null;
+  if (sel) sel.value = ageMode;
+}
+
 // ────────────────────────────────────────────────────────────
 // PDF extraction
 // ────────────────────────────────────────────────────────────
 
 async function extractPdfText(file: File): Promise<string> {
+  const pdfjsLib = await getPdfJs();
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const pages: string[] = [];
@@ -774,11 +982,16 @@ function setStatus(text: string, kind: 'ok' | 'error' | 'busy') {
   el.className = `status-${kind}`;
 }
 
-const MAX_HISTORY_MESSAGES = 14;
+const HEAD_KEEP = 4;
+const TAIL_KEEP = 14;
 
 function trimHistory(): Message[] {
-  if (messages.length <= MAX_HISTORY_MESSAGES + 1) return messages;
-  return [messages[0], ...messages.slice(-MAX_HISTORY_MESSAGES)];
+  if (messages.length <= 1 + HEAD_KEEP + TAIL_KEEP) return messages;
+  return [
+    messages[0],
+    ...messages.slice(1, 1 + HEAD_KEEP),
+    ...messages.slice(-TAIL_KEEP),
+  ];
 }
 
 async function sendToLMStudio(userText: string, speaker: string) {
@@ -800,6 +1013,8 @@ async function sendToLMStudio(userText: string, speaker: string) {
 
   const dmBody = addDMBubble('');
   let fullText = '';
+  currentAbortController = new AbortController();
+  const signal = currentAbortController.signal;
 
   try {
     const response = await fetch(API_URL, {
@@ -814,6 +1029,7 @@ async function sendToLMStudio(userText: string, speaker: string) {
         presence_penalty: 0.6,
         frequency_penalty: 0.3,
       }),
+      signal,
     });
 
     if (!response.ok || !response.body) {
@@ -846,8 +1062,16 @@ async function sendToLMStudio(userText: string, speaker: string) {
         } catch { /* ignore */ }
       }
     }
+    if (!fullText.trim()) {
+      dmBody.parentElement?.remove();
+      messages.pop();
+      addErrorBubble('⚠ Der DM hat nichts gesagt. Versuch es nochmal.');
+      setStatus('Leere Antwort', 'error');
+      return;
+    }
     messages.push({ role: 'assistant', content: fullText });
     parseInventory(fullText);
+    parseInventoryLoss(fullText);
     parseDamage(fullText);
     parseHeal(fullText);
     const diceRequests = parseDiceRequests(fullText);
@@ -863,18 +1087,28 @@ async function sendToLMStudio(userText: string, speaker: string) {
         chip.textContent = req.reason
           ? `🎲 W${req.sides} würfeln — ${req.reason}`
           : `🎲 W${req.sides} würfeln`;
-        chip.addEventListener('click', () => rollDice(req.sides));
+        chip.addEventListener('click', () => rollAndSendForDM(req.sides, req.reason, chip));
         row.appendChild(chip);
       }
       msgWrap.appendChild(row);
     }
     setStatus('Bereit', 'ok');
+    saveGame();
   } catch (err) {
+    if ((err as { name?: string })?.name === 'AbortError') {
+      dmBody.parentElement?.remove();
+      messages.pop();
+      setStatus('Abgebrochen', 'ok');
+      return;
+    }
     console.error(err);
+    dmBody.parentElement?.remove();
+    messages.pop();
     addErrorBubble('⚠ DM-Server nicht erreichbar. Läuft C:\\llama\\start-server.bat auf Port 1234?');
     setStatus('Keine Verbindung', 'error');
   } finally {
     isGenerating = false;
+    currentAbortController = null;
     sendBtn.disabled = false;
     $<HTMLTextAreaElement>('#input').focus();
   }
@@ -925,6 +1159,25 @@ function parseInventory(text: string) {
   if (changed) renderInventory();
 }
 
+function parseInventoryLoss(text: string) {
+  const regex = /\[(?:VERLOREN|VERBRAUCHT):\s*([^\]]+)\]/gi;
+  let match;
+  let changed = false;
+  while ((match = regex.exec(text)) !== null) {
+    const name = match[1].trim();
+    if (!name) continue;
+    const idx = inventory.findIndex((i) => i.name.toLowerCase() === name.toLowerCase());
+    if (idx >= 0) {
+      if (inventory[idx].quantity > 1) inventory[idx].quantity -= 1;
+      else inventory.splice(idx, 1);
+      changed = true;
+    } else {
+      console.warn(`[Tag-Parser] Inventar-Verlust für "${name}" — nicht im Inventar.`);
+    }
+  }
+  if (changed) renderInventory();
+}
+
 function findPlayerByName(name: string): Player | undefined {
   const needle = name.trim().toLowerCase();
   return (
@@ -939,11 +1192,14 @@ function parseDamage(text: string) {
   let match;
   let changed = false;
   while ((match = regex.exec(text)) !== null) {
-    const target = findPlayerByName(match[1]);
+    const name = match[1].trim();
+    const target = findPlayerByName(name);
     const amount = parseInt(match[2], 10);
     if (target && amount > 0) {
       target.hp = Math.max(0, target.hp - amount);
       changed = true;
+    } else if (!target) {
+      console.warn(`[Tag-Parser] [SCHADEN: ${name}] — kein Held mit diesem Namen, ignoriert.`);
     }
   }
   if (changed) renderPlayersSidebar();
@@ -954,11 +1210,14 @@ function parseHeal(text: string) {
   let match;
   let changed = false;
   while ((match = regex.exec(text)) !== null) {
-    const target = findPlayerByName(match[1]);
+    const name = match[1].trim();
+    const target = findPlayerByName(name);
     const amount = parseInt(match[2], 10);
     if (target && amount > 0) {
       target.hp = Math.min(target.maxHp, target.hp + amount);
       changed = true;
+    } else if (!target) {
+      console.warn(`[Tag-Parser] [HEILUNG: ${name}] — kein Held mit diesem Namen, ignoriert.`);
     }
   }
   if (changed) renderPlayersSidebar();
@@ -981,12 +1240,28 @@ function parseDiceRequests(text: string): Array<{ sides: number; reason: string 
 function stripGameTags(text: string): string {
   return text
     .replace(/\[ITEM:\s*[^\]]+\]/gi, '')
+    .replace(/\[(?:VERLOREN|VERBRAUCHT):\s*[^\]]+\]/gi, '')
     .replace(/\[SCHADEN:\s*[^\]]+\]/gi, '')
     .replace(/\[HEILUNG:\s*[^\]]+\]/gi, '')
     .replace(/\[W(?:ÜRFEL|URFEL|UERFEL):\s*[^\]]+\]/gi, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\s+([.,;:!?])/g, '$1')
     .trim();
+}
+
+async function rollAndSendForDM(sides: number, reason: string, chip: HTMLButtonElement) {
+  if (isGenerating) return;
+  const result = Math.floor(Math.random() * sides) + 1;
+  chip.disabled = true;
+  chip.textContent = `🎲 W${sides} → ${result}${reason ? ` (${reason})` : ''}`;
+  for (const sib of Array.from(chip.parentElement?.children ?? [])) {
+    if (sib instanceof HTMLButtonElement) sib.disabled = true;
+  }
+  const active = players.find((p) => p.id === activePlayerId) ?? players[0];
+  const speaker = active?.name ?? 'Held';
+  const reasonPart = reason ? ` für ${reason}` : '';
+  const message = `Ich würfle W${sides}${reasonPart}: ${result}.`;
+  await sendToLMStudio(message, speaker);
 }
 
 function renderInventory() {
@@ -1019,6 +1294,11 @@ function renderPlayersSidebar() {
     li.dataset.id = p.id;
     li.style.borderLeft = `4px solid ${p.color}`;
     if (p.id === activePlayerId) li.classList.add('active');
+    if (p.hp === 0) li.classList.add('downed');
+
+    const downedBadge = p.hp === 0
+      ? '<div class="downed-badge">💀 Bewusstlos</div>'
+      : '';
 
     li.innerHTML = `
       <div class="player-card-head">
@@ -1027,6 +1307,7 @@ function renderPlayersSidebar() {
       </div>
       <div class="hp-row"><span>${p.hp}</span> / <span>${p.maxHp}</span> HP</div>
       <div class="hp-bar-outer"><div class="hp-bar-inner" style="width: ${Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100))}%"></div></div>
+      ${downedBadge}
     `;
 
     li.addEventListener('click', () => {
@@ -1107,13 +1388,36 @@ function setupInputForm() {
   });
 
   $<HTMLButtonElement>('#logout-btn').addEventListener('click', () => {
+    currentAbortController?.abort();
+    saveGame();
     clearSession();
     players = [];
     messages = [];
+    inventory.length = 0;
     activePlayerId = '';
     activeFormPlayerId = '';
     $<HTMLElement>('#app').hidden = true;
     showLoginScreen();
+  });
+
+  const newRunBtn = document.getElementById('new-run-btn') as HTMLButtonElement | null;
+  newRunBtn?.addEventListener('click', () => {
+    if (!confirm('Neue Runde starten? Der aktuelle Spielstand geht verloren.')) return;
+    currentAbortController?.abort();
+    clearGame();
+    players = [];
+    messages = [];
+    inventory.length = 0;
+    activePlayerId = '';
+    activeFormPlayerId = '';
+    $<HTMLElement>('#app').hidden = true;
+    showCharModal();
+  });
+
+  const ageSel = document.getElementById('age-mode-app') as HTMLSelectElement | null;
+  ageSel?.addEventListener('change', () => {
+    ageMode = ageSel.value as AgeMode;
+    saveGame();
   });
 }
 
@@ -1134,7 +1438,12 @@ function init() {
   if (session && loadAccounts()[session.toLowerCase()]) {
     currentUser = session;
     hideLoginScreen();
-    showCharModal();
+    const save = loadGame();
+    if (save) {
+      resumeGame(save);
+    } else {
+      showCharModal();
+    }
   } else {
     showLoginScreen();
   }

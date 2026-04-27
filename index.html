@@ -111,6 +111,17 @@
       <section id="chat-panel">
         <header id="chat-header">
           <h1>Valdermoor</h1>
+          <div class="header-controls">
+            <label class="header-age">
+              <span>Modus:</span>
+              <select id="age-mode-app" title="Altersmodus">
+                <option value="kinder">Kinder</option>
+                <option value="jugend">Jugend</option>
+                <option value="erwachsen">Erwachsen</option>
+              </select>
+            </label>
+            <button type="button" id="new-run-btn" class="text-btn" title="Neue Runde starten">🆕 Neue Runde</button>
+          </div>
           <div id="status" class="status-ok">Bereit</div>
         </header>
         <div id="messages" role="log" aria-live="polite"></div>

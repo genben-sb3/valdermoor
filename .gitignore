@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Local env (echte EmailJS-Credentials)
+.env
+.env.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

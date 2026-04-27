@@ -869,6 +869,50 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: #1a1a1a;
 }
 
+/* ========== Downed player ========== */
+.player-card.downed {
+  opacity: 0.55;
+  filter: grayscale(0.7);
+  position: relative;
+}
+.player-card.downed .hp-bar-inner {
+  background: #444 !important;
+}
+.downed-badge {
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: #d96868;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* ========== Chat header controls ========== */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.header-age {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+  color: var(--muted, #9a8a6c);
+}
+.header-age select {
+  background: #1a1410;
+  color: var(--gold, #c9a84c);
+  border: 1px solid var(--panel-border, #3a2e20);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-family: var(--font-body, inherit);
+  cursor: pointer;
+}
+#new-run-btn {
+  font-size: 0.9em;
+}
+
 /* ========== DM Dice Requests ========== */
 .dice-request-row {
   display: flex;
