@@ -869,6 +869,47 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: #1a1a1a;
 }
 
+/* ========== Save toast ========== */
+.save-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 8px 16px;
+  background: linear-gradient(180deg, #2a1f10 0%, #1a1308 100%);
+  border: 1px solid var(--gold, #c9a84c);
+  border-radius: 12px;
+  color: var(--gold, #c9a84c);
+  font-family: var(--font-body, inherit);
+  font-size: 0.85em;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 9999;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+}
+.save-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ========== Retry button ========== */
+.retry-btn {
+  margin-top: 8px;
+  background: linear-gradient(180deg, #2a1f10 0%, #1a1308 100%);
+  border: 1px solid var(--gold, #c9a84c);
+  color: var(--gold, #c9a84c);
+  font-family: var(--font-body, inherit);
+  font-size: 0.9em;
+  padding: 5px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.retry-btn:hover {
+  box-shadow: 0 0 10px rgba(201, 168, 76, 0.5);
+}
+
 /* ========== Stop button mode ========== */
 #send-btn.stop-mode {
   background: linear-gradient(180deg, #4a1a1a 0%, #2a0e0e 100%) !important;

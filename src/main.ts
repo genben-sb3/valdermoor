@@ -71,6 +71,7 @@ interface GameSave {
 // ────────────────────────────────────────────────────────────
 
 const API_URL = 'http://localhost:1234/v1/chat/completions';
+const MODELS_URL = 'http://localhost:1234/v1/models';
 const STAT_KEYS: StatKey[] = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
 const ACCOUNTS_KEY = 'valdermoor:accounts';
 const SESSION_KEY = 'valdermoor:session';
@@ -262,6 +263,7 @@ function saveGame() {
   };
   try {
     localStorage.setItem(key, JSON.stringify(save));
+    showSaveToast();
   } catch (e) {
     console.warn('Spielstand konnte nicht gespeichert werden:', e);
   }
@@ -856,7 +858,7 @@ function beginAdventure() {
   const intro =
     `Unsere Gruppe: ${introParts}. Wir treten nach Valdermoor ein. ` +
     `Begrüße uns und führe uns in eine passende Eröffnungsszene ein.`;
-  sendToLMStudio(intro, 'Erzähler');
+  void checkLmStudioStatus().then(() => sendToLMStudio(intro, 'Erzähler'));
 }
 
 function resumeGame(save: GameSave) {
@@ -1029,10 +1031,91 @@ function addErrorBubble(text: string) {
   el.scrollTop = el.scrollHeight;
 }
 
+function addRetryBubble(text: string, onRetry: () => void) {
+  const el = $<HTMLDivElement>('#messages');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg msg-error';
+  const txt = document.createElement('div');
+  txt.textContent = text;
+  wrap.appendChild(txt);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'retry-btn';
+  btn.textContent = '🔁 Nochmal versuchen';
+  btn.addEventListener('click', () => {
+    wrap.remove();
+    onRetry();
+  });
+  wrap.appendChild(btn);
+  el.appendChild(wrap);
+  el.scrollTop = el.scrollHeight;
+}
+
 function setStatus(text: string, kind: 'ok' | 'error' | 'busy') {
   const el = $<HTMLDivElement>('#status');
   el.textContent = text;
   el.className = `status-${kind}`;
+}
+
+let saveToastTimer: number | null = null;
+function showSaveToast() {
+  let toast = document.getElementById('save-toast') as HTMLDivElement | null;
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'save-toast';
+    toast.className = 'save-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = '💾 Gespeichert';
+  toast.classList.add('show');
+  if (saveToastTimer) window.clearTimeout(saveToastTimer);
+  saveToastTimer = window.setTimeout(() => {
+    toast?.classList.remove('show');
+  }, 1500);
+}
+
+interface LmStatus {
+  ok: boolean;
+  reason?: 'unreachable' | 'no-model' | 'http-error';
+  modelCount?: number;
+  detail?: string;
+}
+
+async function pingLmStudio(): Promise<LmStatus> {
+  try {
+    const res = await fetch(MODELS_URL, { method: 'GET' });
+    if (!res.ok) return { ok: false, reason: 'http-error', detail: `HTTP ${res.status}` };
+    const json = (await res.json()) as { data?: Array<{ id: string }> };
+    const count = json.data?.length ?? 0;
+    if (count === 0) return { ok: false, reason: 'no-model', modelCount: 0 };
+    return { ok: true, modelCount: count };
+  } catch (err) {
+    return { ok: false, reason: 'unreachable', detail: String(err) };
+  }
+}
+
+async function checkLmStudioStatus() {
+  const status = await pingLmStudio();
+  if (status.ok) {
+    setStatus(`Bereit (${status.modelCount} Modell${(status.modelCount ?? 0) > 1 ? 'e' : ''})`, 'ok');
+    return;
+  }
+  if (status.reason === 'unreachable') {
+    addErrorBubble(
+      '⚠ LM Studio läuft nicht. Starte LM Studio → Tab "Local Server" → "Start Server". ' +
+      'Sieh in SETUP.md für Details.',
+    );
+    setStatus('LM Studio offline', 'error');
+  } else if (status.reason === 'no-model') {
+    addErrorBubble(
+      '⚠ LM Studio läuft, aber kein Modell ist geladen. ' +
+      'Geh in den "Chat"-Tab und lade ein Modell (z.B. SmolLM2 360M oder Phi-3.5 Mini).',
+    );
+    setStatus('Kein Modell', 'error');
+  } else {
+    addErrorBubble(`⚠ LM Studio antwortet mit Fehler: ${status.detail ?? 'unbekannt'}`);
+    setStatus('Server-Fehler', 'error');
+  }
 }
 
 const HEAD_KEEP = 4;
@@ -1171,9 +1254,28 @@ async function sendToLMStudio(userText: string, speaker: string) {
     }
     console.error(err);
     dmBody.parentElement?.remove();
-    messages.pop();
-    addErrorBubble('⚠ DM-Server nicht erreichbar. Läuft C:\\llama\\start-server.bat auf Port 1234?');
-    setStatus('Keine Verbindung', 'error');
+    const lastMsg = messages.pop();
+    const retryUserText = lastMsg?.content ?? userText;
+    const retrySpeaker = lastMsg?.speaker ?? speaker;
+
+    const status = await pingLmStudio();
+    let errMsg: string;
+    if (status.reason === 'unreachable') {
+      errMsg = '⚠ LM Studio nicht erreichbar. Server starten? (Tab "Local Server" → "Start Server")';
+      setStatus('LM Studio offline', 'error');
+    } else if (status.reason === 'no-model') {
+      errMsg = '⚠ LM Studio läuft, aber kein Modell geladen. Lade ein Modell im Chat-Tab.';
+      setStatus('Kein Modell', 'error');
+    } else {
+      errMsg = `⚠ Verbindungsfehler: ${(err as Error)?.message ?? 'unbekannt'}`;
+      setStatus('Fehler', 'error');
+    }
+    addRetryBubble(errMsg, () => {
+      const stripped = retrySpeaker !== 'Erzähler' && retryUserText.startsWith(retrySpeaker + ':')
+        ? retryUserText.slice(retrySpeaker.length + 1).trim()
+        : retryUserText;
+      void sendToLMStudio(stripped, retrySpeaker);
+    });
   } finally {
     isGenerating = false;
     currentAbortController = null;
@@ -1511,6 +1613,11 @@ function init() {
   setupDiceButtons();
   setupInputForm();
 
+  window.addEventListener('beforeunload', () => {
+    currentAbortController?.abort();
+    saveGame();
+  });
+
   const session = getSession();
   if (session && loadAccounts()[session.toLowerCase()]) {
     currentUser = session;
@@ -1518,6 +1625,7 @@ function init() {
     const save = loadGame();
     if (save) {
       resumeGame(save);
+      void checkLmStudioStatus();
     } else {
       showCharModal();
     }
