@@ -70,8 +70,8 @@ interface GameSave {
 // Constants
 // ────────────────────────────────────────────────────────────
 
-const API_URL = 'http://localhost:1234/v1/chat/completions';
-const MODELS_URL = 'http://localhost:1234/v1/models';
+const API_URL = '/v1/chat/completions';
+const MODELS_URL = '/v1/models';
 const STAT_KEYS: StatKey[] = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
 const ACCOUNTS_KEY = 'valdermoor:accounts';
 const SESSION_KEY = 'valdermoor:session';
