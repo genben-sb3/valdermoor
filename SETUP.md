@@ -48,6 +48,18 @@ Browser öffnet sich auf http://localhost:5173. Fertig.
 > (LM-Studio-CLI, falls installiert) oder über `C:\llama\start-server.bat`.
 > Achte aufs Terminal: `✓ LM-Server bereit` zeigt's an.
 
+### Welches Modell?
+
+Im `C:\llama\` Ordner liegen zwei Bat-Dateien — wähle nach Bedarf:
+
+| Datei | Modell | Größe | Geschwindigkeit | Qualität |
+|-------|--------|-------|----------------|----------|
+| `start-server.bat` | Qwen 2.5 0.5B Q8_0 | 670 MB | ⚡ ~9 tok/s | 😬 sehr basic, papagei't oft |
+| `start-server-phi.bat` | Phi-3.5 Mini IQ2_M | 1.2 GB | 🐢 ~1-2 tok/s | ✨ deutlich besser, kohärenter |
+
+**Empfehlung:** Phi-3.5 für besseres Storytelling, Qwen wenn Antworten schnell kommen sollen.
+Vor Wechsel: aktiven Server (schwarzes Fenster) schließen, dann andere Bat-Datei doppelklicken.
+
 - **Erste Nutzung:** Registrieren → Code aus Modal eintragen → Helden anlegen → Spielen.
 - **Wiederkommen:** Spielstand wird automatisch geladen.
 - **Neue Geschichte:** "🆕 Neue Runde" oben rechts.
