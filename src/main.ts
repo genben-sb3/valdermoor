@@ -1349,6 +1349,8 @@ function setupDiceButtons() {
 // Inventory
 // ────────────────────────────────────────────────────────────
 
+const highlightedItems = new Set<string>();
+
 function parseInventory(text: string) {
   const regex = /\[ITEM:\s*([^\]]+)\]/gi;
   let match;
@@ -1359,9 +1361,16 @@ function parseInventory(text: string) {
     const existing = inventory.find((i) => i.name.toLowerCase() === name.toLowerCase());
     if (existing) existing.quantity += 1;
     else inventory.push({ name, quantity: 1 });
+    highlightedItems.add(name.toLowerCase());
     changed = true;
   }
-  if (changed) renderInventory();
+  if (changed) {
+    renderInventory();
+    window.setTimeout(() => {
+      highlightedItems.clear();
+      renderInventory();
+    }, 1800);
+  }
 }
 
 function parseInventoryLoss(text: string) {
@@ -1556,6 +1565,9 @@ function renderInventory() {
   for (const item of inventory) {
     const li = document.createElement('li');
     li.textContent = item.quantity > 1 ? `${item.name} ×${item.quantity}` : item.name;
+    if (highlightedItems.has(item.name.toLowerCase())) {
+      li.classList.add('item-new');
+    }
     el.appendChild(li);
   }
 }
