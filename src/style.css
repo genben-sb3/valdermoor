@@ -922,6 +922,10 @@ button { font-family: var(--font-body); cursor: pointer; }
   opacity: 1;
   transform: translateY(0);
 }
+.save-toast.error {
+  border-color: #c94c4c;
+  color: #ff9a9a;
+}
 
 /* ========== Retry button ========== */
 .retry-btn {

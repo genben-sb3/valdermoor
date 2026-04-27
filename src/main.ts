@@ -266,6 +266,12 @@ function saveGame() {
     showSaveToast();
   } catch (e) {
     console.warn('Spielstand konnte nicht gespeichert werden:', e);
+    const isQuota =
+      e instanceof DOMException &&
+      (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+    showSaveToast(isQuota
+      ? '⚠ Speicher voll'
+      : '⚠ Speichern fehlgeschlagen', true);
   }
 }
 
@@ -838,6 +844,12 @@ function setupModal() {
       alert('Bitte alle Spieler benennen.');
       return;
     }
+    const namesLower = players.map((p) => p.name.trim().toLowerCase());
+    const dup = namesLower.find((n, i) => namesLower.indexOf(n) !== i);
+    if (dup) {
+      alert(`Doppelter Name: "${dup}". Jeder Held braucht einen eindeutigen Namen, sonst klappt das Tag-System nicht.`);
+      return;
+    }
     beginAdventure();
   });
 }
@@ -1062,7 +1074,7 @@ function setStatus(text: string, kind: 'ok' | 'error' | 'busy') {
 }
 
 let saveToastTimer: number | null = null;
-function showSaveToast() {
+function showSaveToast(text: string = '💾 Gespeichert', isError: boolean = false) {
   let toast = document.getElementById('save-toast') as HTMLDivElement | null;
   if (!toast) {
     toast = document.createElement('div');
@@ -1070,12 +1082,14 @@ function showSaveToast() {
     toast.className = 'save-toast';
     document.body.appendChild(toast);
   }
-  toast.textContent = '💾 Gespeichert';
+  toast.textContent = text;
+  toast.classList.toggle('error', isError);
   toast.classList.add('show');
   if (saveToastTimer) window.clearTimeout(saveToastTimer);
+  const duration = isError ? 3000 : 1500;
   saveToastTimer = window.setTimeout(() => {
     toast?.classList.remove('show');
-  }, 1500);
+  }, duration);
 }
 
 interface LmStatus {
@@ -1647,6 +1661,9 @@ function setupInputForm() {
   });
 
   $<HTMLButtonElement>('#logout-btn').addEventListener('click', () => {
+    if (isGenerating) {
+      if (!confirm('Der DM antwortet gerade. Trotzdem abmelden? (Antwort wird abgebrochen.)')) return;
+    }
     currentAbortController?.abort();
     saveGame();
     clearSession();
@@ -1711,6 +1728,23 @@ function init() {
     saveGame();
   });
 
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const help = document.getElementById('help-modal') as HTMLDivElement | null;
+      if (help && !help.hidden) { help.hidden = true; e.preventDefault(); return; }
+      const emailModal = document.getElementById('email-code-modal') as HTMLDivElement | null;
+      if (emailModal && !emailModal.hidden) { emailModal.hidden = true; e.preventDefault(); return; }
+    }
+    if (e.key === '?' && !isTypingTarget(e.target)) {
+      const help = document.getElementById('help-modal') as HTMLDivElement | null;
+      const app = document.getElementById('app') as HTMLElement | null;
+      if (help && app && !app.hidden) {
+        help.hidden = false;
+        e.preventDefault();
+      }
+    }
+  });
+
   const session = getSession();
   if (session && loadAccounts()[session.toLowerCase()]) {
     currentUser = session;
@@ -1725,6 +1759,12 @@ function init() {
   } else {
     showLoginScreen();
   }
+}
+
+function isTypingTarget(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  const tag = t.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
 }
 
 document.addEventListener('DOMContentLoaded', init);
