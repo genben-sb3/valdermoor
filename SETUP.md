@@ -43,6 +43,11 @@ npm run dev
 
 Browser öffnet sich auf http://localhost:5173. Fertig.
 
+> **Auto-Start:** Wenn LM Studio nicht läuft, versucht Vite ihn beim
+> `npm run dev` automatisch zu starten — entweder via `lms server start`
+> (LM-Studio-CLI, falls installiert) oder über `C:\llama\start-server.bat`.
+> Achte aufs Terminal: `✓ LM-Server bereit` zeigt's an.
+
 - **Erste Nutzung:** Registrieren → Code aus Modal eintragen → Helden anlegen → Spielen.
 - **Wiederkommen:** Spielstand wird automatisch geladen.
 - **Neue Geschichte:** "🆕 Neue Runde" oben rechts.
