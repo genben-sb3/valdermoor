@@ -899,6 +899,16 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .help-box p { margin: 6px 0; }
 
+/* ========== Email-Code: Sending state ========== */
+@keyframes email-sending-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+.email-code-display.sending {
+  animation: email-sending-pulse 1s ease-in-out infinite;
+  color: var(--muted, #9a8a6c);
+}
+
 /* ========== Save toast ========== */
 .save-toast {
   position: fixed;

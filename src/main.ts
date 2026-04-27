@@ -254,11 +254,10 @@ function saveGame() {
     players,
     inventory: [...inventory],
     activePlayerId,
-    messages: messages.slice(1).map((m) => ({
-      role: m.role === 'system' ? 'user' : (m.role as 'user' | 'assistant'),
-      content: m.content,
-      speaker: m.speaker,
-    })),
+    messages: messages
+      .slice(1)
+      .filter((m): m is Message & { role: 'user' | 'assistant' } => m.role !== 'system')
+      .map((m) => ({ role: m.role, content: m.content, speaker: m.speaker })),
     savedAt: Date.now(),
   };
   try {
@@ -904,6 +903,26 @@ function resumeGame(save: GameSave) {
     } else if (m.role === 'assistant') {
       const dmBody = addDMBubble('');
       dmBody.textContent = stripGameTags(m.content);
+      const events = extractDmEvents(m.content);
+      const wrap = dmBody.parentElement as HTMLDivElement | null;
+      if (wrap) renderEventBadges(wrap, events);
+      const diceReqs = parseDiceRequests(m.content);
+      if (wrap && diceReqs.length) {
+        const row = document.createElement('div');
+        row.className = 'dice-request-row';
+        for (const req of diceReqs) {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'dice-request-chip';
+          chip.textContent = req.reason
+            ? `🎲 W${req.sides} würfeln — ${req.reason}`
+            : `🎲 W${req.sides} würfeln`;
+          chip.disabled = true;
+          chip.title = 'Aus früherer Sitzung — nicht mehr klickbar';
+          row.appendChild(chip);
+        }
+        wrap.appendChild(row);
+      }
     }
   }
 
@@ -1096,17 +1115,21 @@ interface LmStatus {
   ok: boolean;
   reason?: 'unreachable' | 'no-model' | 'http-error';
   modelCount?: number;
+  modelId?: string;
   detail?: string;
 }
+
+let knownModelId: string | null = null;
 
 async function pingLmStudio(): Promise<LmStatus> {
   try {
     const res = await fetch(MODELS_URL, { method: 'GET' });
     if (!res.ok) return { ok: false, reason: 'http-error', detail: `HTTP ${res.status}` };
     const json = (await res.json()) as { data?: Array<{ id: string }> };
-    const count = json.data?.length ?? 0;
-    if (count === 0) return { ok: false, reason: 'no-model', modelCount: 0 };
-    return { ok: true, modelCount: count };
+    const ids = (json.data ?? []).map((m) => m.id).filter(Boolean);
+    if (ids.length === 0) return { ok: false, reason: 'no-model', modelCount: 0 };
+    knownModelId = ids[0];
+    return { ok: true, modelCount: ids.length, modelId: ids[0] };
   } catch (err) {
     return { ok: false, reason: 'unreachable', detail: String(err) };
   }
@@ -1190,7 +1213,7 @@ async function sendToLMStudio(userText: string, speaker: string) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'local-model',
+        model: knownModelId ?? 'local-model',
         messages: trimHistory().map(({ role, content }) => ({ role, content })),
         stream: true,
         temperature: 0.75,
@@ -1487,6 +1510,28 @@ function extractDmEvents(text: string): DmEvents {
   return events;
 }
 
+function countBy<T>(arr: T[], key: (x: T) => string): Map<string, { item: T; count: number }> {
+  const map = new Map<string, { item: T; count: number }>();
+  for (const x of arr) {
+    const k = key(x);
+    const e = map.get(k);
+    if (e) e.count += 1;
+    else map.set(k, { item: x, count: 1 });
+  }
+  return map;
+}
+
+function sumBy<T>(arr: T[], key: (x: T) => string, amount: (x: T) => number): Map<string, { item: T; total: number }> {
+  const map = new Map<string, { item: T; total: number }>();
+  for (const x of arr) {
+    const k = key(x);
+    const e = map.get(k);
+    if (e) e.total += amount(x);
+    else map.set(k, { item: x, total: amount(x) });
+  }
+  return map;
+}
+
 function renderEventBadges(parent: HTMLElement, events: DmEvents) {
   const total =
     events.itemsAdded.length +
@@ -1498,28 +1543,28 @@ function renderEventBadges(parent: HTMLElement, events: DmEvents) {
   const row = document.createElement('div');
   row.className = 'event-badge-row';
 
-  for (const item of events.itemsAdded) {
+  for (const { item, count } of countBy(events.itemsAdded, (s) => s.toLowerCase()).values()) {
     const b = document.createElement('span');
     b.className = 'event-badge event-badge-add';
-    b.textContent = `🎒 +${item}`;
+    b.textContent = count > 1 ? `🎒 +${item} ×${count}` : `🎒 +${item}`;
     row.appendChild(b);
   }
-  for (const item of events.itemsLost) {
+  for (const { item, count } of countBy(events.itemsLost, (s) => s.toLowerCase()).values()) {
     const b = document.createElement('span');
     b.className = 'event-badge event-badge-lost';
-    b.textContent = `🎒 −${item}`;
+    b.textContent = count > 1 ? `🎒 −${item} ×${count}` : `🎒 −${item}`;
     row.appendChild(b);
   }
-  for (const d of events.damage) {
+  for (const { item: d, total: amt } of sumBy(events.damage, (x) => x.name.toLowerCase(), (x) => x.amount).values()) {
     const b = document.createElement('span');
     b.className = 'event-badge event-badge-damage';
-    b.textContent = `💥 ${d.name} −${d.amount} HP`;
+    b.textContent = `💥 ${d.name} −${amt} HP`;
     row.appendChild(b);
   }
-  for (const h of events.heal) {
+  for (const { item: h, total: amt } of sumBy(events.heal, (x) => x.name.toLowerCase(), (x) => x.amount).values()) {
     const b = document.createElement('span');
     b.className = 'event-badge event-badge-heal';
-    b.textContent = `✨ ${h.name} +${h.amount} HP`;
+    b.textContent = `✨ ${h.name} +${amt} HP`;
     row.appendChild(b);
   }
   parent.appendChild(row);
@@ -1817,7 +1862,13 @@ function init() {
       const help = document.getElementById('help-modal') as HTMLDivElement | null;
       if (help && !help.hidden) { help.hidden = true; e.preventDefault(); return; }
       const emailModal = document.getElementById('email-code-modal') as HTMLDivElement | null;
-      if (emailModal && !emailModal.hidden) { emailModal.hidden = true; e.preventDefault(); return; }
+      if (emailModal && !emailModal.hidden) {
+        emailModal.hidden = true;
+        pendingAction = null;
+        pendingCode = null;
+        e.preventDefault();
+        return;
+      }
     }
     if (e.key === '?' && !isTypingTarget(e.target)) {
       const help = document.getElementById('help-modal') as HTMLDivElement | null;
