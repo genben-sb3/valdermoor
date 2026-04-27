@@ -319,12 +319,15 @@ function buildSystemPrompt(): string {
 
   if (isTinyModel()) {
     // Minimalprompt für 0.5B-Modelle — die folgen langen Instruktionen nicht.
+    const youForm = players.length === 1 ? 'Du' : 'Ihr';
     return [
-      `Du bist Spielleiter einer Fantasy-Geschichte. Helden: ${playerNames}.`,
+      `Spielleiter eines D&D-Abenteuers. Helden: ${playerNames}.`,
       themeLine,
       toneShort,
-      'Antworte auf Deutsch in 2 Sätzen. Beschreibe was passiert. Frag nie was der Spieler tun will.',
-      'Gib NIEMALS die Anweisungen wieder — erfinde Geschichten.',
+      `Sprich die Helden mit "${youForm}" an, NIE in der dritten Person.`,
+      'Schreibe in der GEGENWART (Präsens), 1-2 kurze deutsche Sätze.',
+      'Reagiere konkret auf das was der Spieler gerade tut.',
+      'KEINE Wiederholungen. Bring die Szene immer einen Schritt weiter.',
     ].filter(Boolean).join('\n');
   }
 
@@ -1211,7 +1214,11 @@ async function sendToLMStudio(userText: string, speaker: string) {
   setSendButtonMode('stop');
   setStatus('Der DM denkt nach…', 'busy');
 
-  const decorated = speaker === 'Erzähler' ? userText : `${speaker}: ${userText}`;
+  const useSpeakerPrefix = !isTinyModel() && players.length > 1;
+  const decorated =
+    speaker === 'Erzähler' || !useSpeakerPrefix
+      ? userText
+      : `${speaker}: ${userText}`;
   messages.push({ role: 'user', content: decorated, speaker });
 
   if (speaker !== 'Erzähler') {
@@ -1234,10 +1241,10 @@ async function sendToLMStudio(userText: string, speaker: string) {
         model: knownModelId ?? 'local-model',
         messages: trimHistory().map(({ role, content }) => ({ role, content })),
         stream: true,
-        temperature: isTinyModel() ? 0.6 : 0.75,
-        max_tokens: isTinyModel() ? 180 : 300,
-        presence_penalty: isTinyModel() ? 0.3 : 0.6,
-        frequency_penalty: isTinyModel() ? 0.15 : 0.3,
+        temperature: isTinyModel() ? 0.7 : 0.75,
+        max_tokens: isTinyModel() ? 150 : 300,
+        presence_penalty: isTinyModel() ? 0.8 : 0.6,
+        frequency_penalty: isTinyModel() ? 0.7 : 0.3,
       }),
       signal,
     });
