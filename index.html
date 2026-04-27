@@ -97,6 +97,55 @@
       </div>
     </div>
 
+    <!-- HELP-MODAL -->
+    <div id="help-modal" class="modal-overlay" hidden>
+      <div class="modal-box help-box">
+        <h2>❓ Hilfe & Tipps</h2>
+
+        <h3>Wie spiele ich?</h3>
+        <ul>
+          <li>Wähl unten links über "Du sprichst als" einen Helden aus.</li>
+          <li>Beschreibe was du tust (z.B. "Ich öffne die Tür leise") und drück Enter.</li>
+          <li>Der DM beschreibt was passiert.</li>
+          <li><strong>⏹ Stop:</strong> Während der DM antwortet, klick den roten Senden-Button um abzubrechen.</li>
+        </ul>
+
+        <h3>Würfeln</h3>
+        <ul>
+          <li>Klick einen Würfel-Button rechts → Ergebnis wird ins Eingabefeld eingefügt → Enter zum Senden.</li>
+          <li>Manchmal verlangt der DM einen Wurf — dann erscheint ein 🎲-Chip unter seiner Nachricht. Klick draufrum den Wurf automatisch zu schicken.</li>
+        </ul>
+
+        <h3>Spiel-Markierungen (DM-Tags)</h3>
+        <p>Der DM kann diese Tags benutzen — sie verändern das Spiel automatisch:</p>
+        <ul>
+          <li><code>[ITEM: X]</code> → X kommt ins Inventar</li>
+          <li><code>[VERBRAUCHT: X]</code> oder <code>[VERLOREN: X]</code> → X wird entfernt</li>
+          <li><code>[SCHADEN: Name -W]</code> → Held verliert W HP</li>
+          <li><code>[HEILUNG: Name +W]</code> → Held bekommt W HP</li>
+          <li><code>[WÜRFEL: W20 Grund]</code> → fragt nach Wurf</li>
+        </ul>
+
+        <h3>Charakter-Werte</h3>
+        <ul>
+          <li><strong>STR</strong> Stärke · <strong>DEX</strong> Geschicklichkeit · <strong>CON</strong> Konstitution</li>
+          <li><strong>INT</strong> Intelligenz · <strong>WIS</strong> Weisheit · <strong>CHA</strong> Charisma</li>
+          <li>Höhere Werte = besser. 10 ist Durchschnitt, 18 ist heroisch.</li>
+        </ul>
+
+        <h3>Speichern & Fortsetzen</h3>
+        <ul>
+          <li>Wird automatisch gespeichert (kleines "💾 Gespeichert" unten rechts).</li>
+          <li>Tab schließen + zurückkommen → Spiel geht weiter wo du aufgehört hast.</li>
+          <li><strong>🆕 Neue Runde:</strong> löscht den Spielstand und startet neu.</li>
+        </ul>
+
+        <div class="modal-actions">
+          <button type="button" id="help-close" class="btn-primary">Verstanden</button>
+        </div>
+      </div>
+    </div>
+
     <!-- HAUPT-APP (erst sichtbar nach Login) -->
     <main id="app" hidden>
       <aside id="character-panel">
@@ -120,6 +169,7 @@
                 <option value="erwachsen">Erwachsen</option>
               </select>
             </label>
+            <button type="button" id="help-btn" class="text-btn" title="Hilfe & Tipps">❓ Hilfe</button>
             <button type="button" id="new-run-btn" class="text-btn" title="Neue Runde starten">🆕 Neue Runde</button>
           </div>
           <div id="status" class="status-ok">Bereit</div>
@@ -146,12 +196,12 @@
       <aside id="side-panel">
         <h2>Würfel</h2>
         <div id="dice-grid">
-          <button type="button" class="dice-btn" data-sides="4">W4</button>
-          <button type="button" class="dice-btn" data-sides="6">W6</button>
-          <button type="button" class="dice-btn" data-sides="8">W8</button>
-          <button type="button" class="dice-btn" data-sides="10">W10</button>
-          <button type="button" class="dice-btn" data-sides="12">W12</button>
-          <button type="button" class="dice-btn" data-sides="20">W20</button>
+          <button type="button" class="dice-btn" data-sides="4" title="4-seitiger Würfel — kleine Treffer (Dolch, kleine Zauber)">W4</button>
+          <button type="button" class="dice-btn" data-sides="6" title="6-seitiger Würfel — Standard für viele Waffen (Schwert, Bogen)">W6</button>
+          <button type="button" class="dice-btn" data-sides="8" title="8-seitiger Würfel — mittlere Waffen (Streitkolben, Speer)">W8</button>
+          <button type="button" class="dice-btn" data-sides="10" title="10-seitiger Würfel — größere Waffen oder Heilung">W10</button>
+          <button type="button" class="dice-btn" data-sides="12" title="12-seitiger Würfel — schwere Waffen (Großaxt)">W12</button>
+          <button type="button" class="dice-btn" data-sides="20" title="20-seitiger Würfel — Proben auf Stats und Aktionen">W20</button>
         </div>
         <div id="dice-result" aria-live="polite"></div>
 

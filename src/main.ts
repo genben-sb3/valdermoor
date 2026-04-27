@@ -305,7 +305,8 @@ function buildSystemPrompt(): string {
   const playerLines = players.length
     ? players.map((p) => {
         const downed = p.hp === 0 ? ' — BEWUSSTLOS (kann nichts tun)' : '';
-        return `• ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp}${downed}`;
+        const stats = STAT_KEYS.map((k) => `${k} ${p.stats[k]}`).join(' ');
+        return `• ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp} | ${stats}${downed}`;
       }).join('\n')
     : '• (noch keine Helden)';
 
@@ -333,6 +334,9 @@ Du beschreibst lebendige Szenen und reagierst auf die Aktionen der Helden. Du bi
 - [HEILUNG: Name +Wert] — wenn ein Held geheilt wird, z.B. [HEILUNG: Lina +6]
 - [WÜRFEL: W20 Grund] — wenn ein Held würfeln soll, z.B. [WÜRFEL: W20 Geschicklichkeit] (auch W4/W6/W8/W10/W12 möglich)
 Nur Tags für Helden benutzen — nicht für Gegner/NSCs. Bewusstlose Helden (HP 0) können nicht handeln.
+
+# WÜRFE & STATS
+Wähle den Wurf-Grund passend zum Stat: STR (Stärke), DEX (Geschicklichkeit), CON (Konstitution), INT (Intelligenz), WIS (Weisheit), CHA (Charisma). Höhere Stats → bessere Helden in dem Bereich. Berücksichtige die Werte, wenn du Schwierigkeit oder Erfolg beurteilst.
 
 # BEISPIEL EINER GUTEN ANTWORT
 Spieler: "Marko öffnet vorsichtig die morsche Truhe."
@@ -1226,8 +1230,10 @@ async function sendToLMStudio(userText: string, speaker: string) {
     parseDamage(fullText);
     parseHeal(fullText);
     const diceRequests = parseDiceRequests(fullText);
+    const events = extractDmEvents(fullText);
     dmBody.textContent = stripGameTags(fullText);
     const msgWrap = dmBody.parentElement as HTMLDivElement | null;
+    if (msgWrap) renderEventBadges(msgWrap, events);
     if (msgWrap && diceRequests.length) {
       const row = document.createElement('div');
       row.className = 'dice-request-row';
@@ -1405,6 +1411,80 @@ function parseDiceRequests(text: string): Array<{ sides: number; reason: string 
     out.push({ sides, reason: (match[2] ?? '').trim() });
   }
   return out;
+}
+
+interface DmEvents {
+  itemsAdded: string[];
+  itemsLost: string[];
+  damage: Array<{ name: string; amount: number }>;
+  heal: Array<{ name: string; amount: number }>;
+}
+
+function extractDmEvents(text: string): DmEvents {
+  const events: DmEvents = { itemsAdded: [], itemsLost: [], damage: [], heal: [] };
+  let m: RegExpExecArray | null;
+
+  const itemRe = /\[ITEM:\s*([^\]]+)\]/gi;
+  while ((m = itemRe.exec(text)) !== null) {
+    const n = m[1].trim();
+    if (n) events.itemsAdded.push(n);
+  }
+
+  const lossRe = /\[(?:VERLOREN|VERBRAUCHT):\s*([^\]]+)\]/gi;
+  while ((m = lossRe.exec(text)) !== null) {
+    const n = m[1].trim();
+    if (n) events.itemsLost.push(n);
+  }
+
+  const dmgRe = /\[SCHADEN:\s*([^\-\]]+?)\s*-\s*(\d{1,3})\s*\]/gi;
+  while ((m = dmgRe.exec(text)) !== null) {
+    events.damage.push({ name: m[1].trim(), amount: parseInt(m[2], 10) });
+  }
+
+  const healRe = /\[HEILUNG:\s*([^\+\]]+?)\s*\+\s*(\d{1,3})\s*\]/gi;
+  while ((m = healRe.exec(text)) !== null) {
+    events.heal.push({ name: m[1].trim(), amount: parseInt(m[2], 10) });
+  }
+
+  return events;
+}
+
+function renderEventBadges(parent: HTMLElement, events: DmEvents) {
+  const total =
+    events.itemsAdded.length +
+    events.itemsLost.length +
+    events.damage.length +
+    events.heal.length;
+  if (total === 0) return;
+
+  const row = document.createElement('div');
+  row.className = 'event-badge-row';
+
+  for (const item of events.itemsAdded) {
+    const b = document.createElement('span');
+    b.className = 'event-badge event-badge-add';
+    b.textContent = `🎒 +${item}`;
+    row.appendChild(b);
+  }
+  for (const item of events.itemsLost) {
+    const b = document.createElement('span');
+    b.className = 'event-badge event-badge-lost';
+    b.textContent = `🎒 −${item}`;
+    row.appendChild(b);
+  }
+  for (const d of events.damage) {
+    const b = document.createElement('span');
+    b.className = 'event-badge event-badge-damage';
+    b.textContent = `💥 ${d.name} −${d.amount} HP`;
+    row.appendChild(b);
+  }
+  for (const h of events.heal) {
+    const b = document.createElement('span');
+    b.className = 'event-badge event-badge-heal';
+    b.textContent = `✨ ${h.name} +${h.amount} HP`;
+    row.appendChild(b);
+  }
+  parent.appendChild(row);
 }
 
 function stripGameTags(text: string): string {
@@ -1597,6 +1677,19 @@ function setupInputForm() {
   ageSel?.addEventListener('change', () => {
     ageMode = ageSel.value as AgeMode;
     saveGame();
+  });
+
+  const helpBtn = document.getElementById('help-btn') as HTMLButtonElement | null;
+  const helpModal = document.getElementById('help-modal') as HTMLDivElement | null;
+  const helpClose = document.getElementById('help-close') as HTMLButtonElement | null;
+  helpBtn?.addEventListener('click', () => {
+    if (helpModal) helpModal.hidden = false;
+  });
+  helpClose?.addEventListener('click', () => {
+    if (helpModal) helpModal.hidden = true;
+  });
+  helpModal?.addEventListener('click', (e) => {
+    if (e.target === helpModal) helpModal.hidden = true;
   });
 }
 

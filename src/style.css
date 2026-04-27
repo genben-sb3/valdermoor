@@ -869,6 +869,36 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: #1a1a1a;
 }
 
+/* ========== Help modal ========== */
+.help-box {
+  max-width: 640px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.help-box h3 {
+  font-family: var(--font-heading, inherit);
+  color: var(--gold, #c9a84c);
+  margin: 18px 0 6px 0;
+  font-size: 1.05em;
+  letter-spacing: 0.5px;
+}
+.help-box ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  line-height: 1.55;
+}
+.help-box li { margin-bottom: 3px; }
+.help-box code {
+  background: #1a1410;
+  border: 1px solid var(--panel-border, #3a2e20);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9em;
+  color: var(--gold, #c9a84c);
+}
+.help-box p { margin: 6px 0; }
+
 /* ========== Save toast ========== */
 .save-toast {
   position: fixed;
@@ -962,6 +992,43 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 #new-run-btn {
   font-size: 0.9em;
+}
+
+/* ========== DM Event Badges (inline unter DM-Bubble) ========== */
+.event-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.event-badge {
+  font-size: 0.78em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--font-body, inherit);
+  letter-spacing: 0.2px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.event-badge-add {
+  background: rgba(95, 145, 70, 0.15);
+  border-color: rgba(140, 200, 100, 0.5);
+  color: #b8e89b;
+}
+.event-badge-lost {
+  background: rgba(120, 90, 60, 0.18);
+  border-color: rgba(180, 130, 80, 0.5);
+  color: #e0bf8a;
+}
+.event-badge-damage {
+  background: rgba(160, 50, 50, 0.18);
+  border-color: rgba(220, 90, 90, 0.55);
+  color: #ff9a9a;
+}
+.event-badge-heal {
+  background: rgba(70, 130, 180, 0.18);
+  border-color: rgba(120, 180, 220, 0.55);
+  color: #b0d8ff;
 }
 
 /* ========== DM Dice Requests ========== */

@@ -1,0 +1,26 @@
+# Default: normalize all text files to LF in the repo,
+# convert to native on checkout (Windows: CRLF).
+* text=auto eol=lf
+
+# Explicit text files
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.json      text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Binary files (no LF/CRLF conversion)
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.svg       text eol=lf
+*.pdf       binary
+*.woff      binary
+*.woff2     binary
