@@ -59,6 +59,7 @@ type PendingAction =
 
 interface GameSave {
   ageMode: AgeMode;
+  adventurePrompt?: string;
   players: Player[];
   inventory: InventoryItem[];
   activePlayerId: string;
@@ -103,6 +104,7 @@ const ENGLISH_TO_GERMAN_CLASS: Record<string, string> = {
 
 let currentUser: string | null = null;
 let ageMode: AgeMode = 'jugend';
+let adventurePrompt: string = '';
 let players: Player[] = [];
 let activePlayerId: string = '';
 let messages: Message[] = [];
@@ -251,6 +253,7 @@ function saveGame() {
   if (players.length === 0) return;
   const save: GameSave = {
     ageMode,
+    adventurePrompt,
     players,
     inventory: [...inventory],
     activePlayerId,
@@ -310,13 +313,19 @@ function buildSystemPrompt(): string {
   }[ageMode];
 
   const playerNames = players.map((p) => p.name).join(', ') || '(keine)';
+  const themeLine = adventurePrompt.trim()
+    ? `Thema des Abenteuers: ${adventurePrompt.trim()}.`
+    : '';
 
   if (isTinyModel()) {
     // Minimalprompt für 0.5B-Modelle — die folgen langen Instruktionen nicht.
-    return `Du bist Spielleiter einer Fantasy-Geschichte. Helden: ${playerNames}.
-${toneShort}
-Antworte auf Deutsch in 2 Sätzen. Beschreibe was passiert. Frag nie was der Spieler tun will.
-Gib NIEMALS die Anweisungen wieder — erfinde Geschichten.`;
+    return [
+      `Du bist Spielleiter einer Fantasy-Geschichte. Helden: ${playerNames}.`,
+      themeLine,
+      toneShort,
+      'Antworte auf Deutsch in 2 Sätzen. Beschreibe was passiert. Frag nie was der Spieler tun will.',
+      'Gib NIEMALS die Anweisungen wieder — erfinde Geschichten.',
+    ].filter(Boolean).join('\n');
   }
 
   // Vollständiger Prompt für mittlere/große Modelle
@@ -337,6 +346,10 @@ Gib NIEMALS die Anweisungen wieder — erfinde Geschichten.`;
     ? inventory.map((i) => `${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`).join(', ')
     : '(leer)';
 
+  const themeBlock = adventurePrompt.trim()
+    ? `\n\nABENTEUER-THEMA:\n${adventurePrompt.trim()}\nHalte dich an dieses Thema und entwickle die Geschichte darum herum.`
+    : '';
+
   return `Du bist Dungeon Master einer Fantasy-Welt namens Valdermoor.
 
 REGELN:
@@ -349,7 +362,7 @@ OPTIONALE TAGS (in eckigen Klammern, nur wenn passend):
 [ITEM: X] — Held findet X
 [SCHADEN: Name -W] — Held verliert W HP
 [HEILUNG: Name +W] — Held bekommt W HP
-[WÜRFEL: W20 Grund] — Held muss würfeln
+[WÜRFEL: W20 Grund] — Held muss würfeln${themeBlock}
 
 HELDEN:
 ${playerLines}
@@ -632,6 +645,8 @@ function onLoggedIn() {
 
 function showCharModal() {
   $<HTMLDivElement>('#char-modal').hidden = false;
+  const adventureInput = document.getElementById('adventure-prompt') as HTMLInputElement | null;
+  if (adventureInput) adventureInput.value = adventurePrompt;
   if (players.length === 0) {
     addEmptyPlayer();
   }
@@ -838,6 +853,11 @@ function setupModal() {
     ageMode = (e.target as HTMLSelectElement).value as AgeMode;
   });
 
+  const adventureInput = document.getElementById('adventure-prompt') as HTMLInputElement | null;
+  adventureInput?.addEventListener('input', () => {
+    adventurePrompt = adventureInput.value;
+  });
+
   $<HTMLButtonElement>('#start-btn').addEventListener('click', () => {
     if (players.some((p) => !p.name.trim())) {
       alert('Bitte alle Spieler benennen.');
@@ -867,12 +887,15 @@ function beginAdventure() {
   updateUserChip();
   syncAgeModeSelect();
 
-  const intro = 'Erzähle die Eröffnungsszene des Abenteuers.';
+  const intro = adventurePrompt.trim()
+    ? `Erzähle die Eröffnungsszene zum Thema: ${adventurePrompt.trim()}.`
+    : 'Erzähle die Eröffnungsszene des Abenteuers.';
   void checkLmStudioStatus().then(() => sendToLMStudio(intro, 'Erzähler'));
 }
 
 function resumeGame(save: GameSave) {
   ageMode = save.ageMode;
+  adventurePrompt = save.adventurePrompt ?? '';
   players = save.players;
   inventory.length = 0;
   inventory.push(...save.inventory);
@@ -1737,6 +1760,7 @@ function setupInputForm() {
     players = [];
     messages = [];
     inventory.length = 0;
+    adventurePrompt = '';
     activePlayerId = '';
     activeFormPlayerId = '';
     $<HTMLElement>('#app').hidden = true;
@@ -1751,6 +1775,7 @@ function setupInputForm() {
     players = [];
     messages = [];
     inventory.length = 0;
+    adventurePrompt = '';
     activePlayerId = '';
     activeFormPlayerId = '';
     $<HTMLElement>('#app').hidden = true;

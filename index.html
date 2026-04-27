@@ -230,6 +230,18 @@
           </select>
         </div>
 
+        <div class="modal-field">
+          <label for="adventure-prompt">Was für ein Abenteuer? (optional)</label>
+          <input
+            type="text"
+            id="adventure-prompt"
+            placeholder='z.B. "Bankraub in einer Magier-Stadt", "Drachenjagd", "Schiffsreise zur verlorenen Insel"'
+            maxlength="200"
+            autocomplete="off"
+          />
+          <small class="field-hint">Leer lassen für ein zufälliges Abenteuer.</small>
+        </div>
+
         <div class="player-tabs-row">
           <div id="player-tabs"></div>
           <button type="button" id="add-player-btn" class="btn-secondary small">+ Spieler</button>
