@@ -1248,6 +1248,7 @@ async function sendToLMStudio(userText: string, speaker: string) {
     dmBody.textContent = stripGameTags(fullText);
     const msgWrap = dmBody.parentElement as HTMLDivElement | null;
     if (msgWrap) renderEventBadges(msgWrap, events);
+    pulseDiceButtons(diceRequests);
     if (msgWrap && diceRequests.length) {
       const row = document.createElement('div');
       row.className = 'dice-request-row';
@@ -1319,6 +1320,20 @@ function rollDice(sides: number) {
   const phrase = `Ich würfle eine ${result} auf dem W${sides}.`;
   input.value = input.value.trim() ? input.value.trimEnd() + ' ' + phrase : phrase;
   input.focus();
+}
+
+function pulseDiceButtons(requests: Array<{ sides: number; reason: string }>) {
+  const seen = new Set<number>();
+  for (const r of requests) {
+    if (seen.has(r.sides)) continue;
+    seen.add(r.sides);
+    const btn = document.querySelector<HTMLButtonElement>(`.dice-btn[data-sides="${r.sides}"]`);
+    if (!btn) continue;
+    btn.classList.remove('pulse');
+    void btn.offsetWidth;
+    btn.classList.add('pulse');
+    window.setTimeout(() => btn.classList.remove('pulse'), 3500);
+  }
 }
 
 function setupDiceButtons() {
@@ -1708,6 +1723,63 @@ function setupInputForm() {
   helpModal?.addEventListener('click', (e) => {
     if (e.target === helpModal) helpModal.hidden = true;
   });
+
+  const exportBtn = document.getElementById('export-btn') as HTMLButtonElement | null;
+  exportBtn?.addEventListener('click', exportAdventure);
+}
+
+function exportAdventure() {
+  if (players.length === 0 || messages.length <= 1) {
+    alert('Es gibt noch nichts zu exportieren — fang erst eine Runde an.');
+    return;
+  }
+  const lines: string[] = [];
+  lines.push('VALDERMOOR — Abenteuer-Protokoll');
+  lines.push('═'.repeat(50));
+  lines.push(`Datum:  ${new Date().toLocaleString('de-DE')}`);
+  lines.push(`Modus:  ${ageMode}`);
+  lines.push('');
+  lines.push('HELDEN:');
+  for (const p of players) {
+    const stats = STAT_KEYS.map((k) => `${k} ${p.stats[k]}`).join(' · ');
+    lines.push(`  • ${p.name} (${p.class}) — HP ${p.hp}/${p.maxHp} | ${stats}`);
+  }
+  lines.push('');
+  if (inventory.length > 0) {
+    lines.push('INVENTAR:');
+    for (const it of inventory) {
+      lines.push(`  • ${it.name}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`);
+    }
+    lines.push('');
+  }
+  lines.push('═'.repeat(50));
+  lines.push('VERLAUF:');
+  lines.push('');
+  for (const m of messages.slice(1)) {
+    if (m.role === 'user') {
+      const speaker = m.speaker ?? 'Spieler';
+      const text = m.content.startsWith(speaker + ':')
+        ? m.content.slice(speaker.length + 1).trim()
+        : m.content;
+      lines.push(`⚔️  ${speaker}:`);
+      lines.push(`    ${text.split('\n').join('\n    ')}`);
+    } else if (m.role === 'assistant') {
+      lines.push(`🧙  Dungeon Master:`);
+      lines.push(`    ${stripGameTags(m.content).split('\n').join('\n    ')}`);
+    }
+    lines.push('');
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+  a.href = url;
+  a.download = `valdermoor-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ────────────────────────────────────────────────────────────

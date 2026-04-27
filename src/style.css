@@ -998,6 +998,17 @@ button { font-family: var(--font-body); cursor: pointer; }
   font-size: 0.9em;
 }
 
+/* ========== Dice button pulse (DM forderte Wurf) ========== */
+@keyframes dice-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.7); }
+  70%  { box-shadow: 0 0 0 14px rgba(201, 168, 76, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0); }
+}
+.dice-btn.pulse {
+  animation: dice-pulse 1.6s ease-out infinite;
+  border-color: var(--gold, #c9a84c) !important;
+}
+
 /* ========== DM Event Badges (inline unter DM-Bubble) ========== */
 .event-badge-row {
   display: flex;
