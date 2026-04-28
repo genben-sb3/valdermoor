@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d0d0d" />
+    <meta name="description" content="Valdermoor — D&D KI-Dungeon-Master. Im Browser spielen oder als App installieren." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <title>Valdermoor — Wo möchtest du spielen?</title>
+    <style>
+      :root {
+        --bg: #0d0d0d;
+        --panel: #14110f;
+        --panel-border: #2b241a;
+        --text: #e5dccf;
+        --text-dim: #9b8f7d;
+        --gold: #c9a84c;
+        --gold-bright: #e9c66b;
+        --font-heading: 'Cinzel', 'Georgia', serif;
+        --font-body: 'Crimson Text', 'Georgia', serif;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: var(--font-body);
+        font-size: 17px;
+        color: var(--text);
+        background: var(--bg);
+        min-height: 100dvh;
+        background:
+          radial-gradient(circle at 20% 10%, #1a1510 0%, transparent 50%),
+          radial-gradient(circle at 80% 90%, #14100c 0%, transparent 50%),
+          var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 24px 16px 60px;
+        position: relative;
+        overflow-x: hidden;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background:
+          radial-gradient(2px 2px at 12% 28%, rgba(255, 180, 100, 0.4), transparent 50%),
+          radial-gradient(1.5px 1.5px at 78% 64%, rgba(201, 168, 76, 0.5), transparent 50%),
+          radial-gradient(1px 1px at 45% 88%, rgba(255, 200, 120, 0.3), transparent 50%),
+          radial-gradient(1.5px 1.5px at 88% 12%, rgba(180, 140, 80, 0.4), transparent 50%);
+        animation: drift 22s ease-in-out infinite alternate;
+        opacity: 0.6;
+      }
+      @keyframes drift {
+        from { transform: translateY(0) translateX(0); }
+        to { transform: translateY(-8px) translateX(4px); }
+      }
+
+      .container {
+        max-width: 880px;
+        width: 100%;
+        position: relative;
+        z-index: 1;
+      }
+
+      .hero {
+        text-align: center;
+        margin-bottom: 48px;
+        animation: fade-up 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
+      }
+      .hero img {
+        width: 100%;
+        max-width: 720px;
+        height: 240px;
+        object-fit: cover;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        background: linear-gradient(135deg, #2a1f15, #0d0d0d);
+      }
+      h1 {
+        font-family: var(--font-heading);
+        color: var(--gold);
+        font-size: clamp(32px, 6vw, 56px);
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+      }
+      .tagline {
+        color: var(--text-dim);
+        font-style: italic;
+        font-size: clamp(15px, 2.4vw, 19px);
+      }
+
+      .cta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+        margin-bottom: 48px;
+      }
+      .cta {
+        background: linear-gradient(180deg, #1a1410 0%, var(--panel) 100%);
+        border: 2px solid var(--panel-border);
+        border-radius: 12px;
+        padding: 24px 20px;
+        text-align: center;
+        text-decoration: none;
+        color: var(--text);
+        cursor: pointer;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        animation: fade-up 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
+      }
+      .cta:nth-child(1) { animation-delay: 0.1s; }
+      .cta:nth-child(2) { animation-delay: 0.2s; }
+      .cta:nth-child(3) { animation-delay: 0.3s; }
+      .cta:nth-child(4) { animation-delay: 0.4s; }
+      .cta:hover {
+        border-color: var(--gold);
+        transform: translateY(-4px);
+        box-shadow:
+          0 0 0 1px var(--gold),
+          0 16px 40px rgba(201, 168, 76, 0.2);
+      }
+      .cta-icon {
+        font-size: 56px;
+        line-height: 1;
+        filter: drop-shadow(0 0 8px rgba(233, 198, 107, 0.4));
+      }
+      .cta h3 {
+        font-family: var(--font-heading);
+        color: var(--gold);
+        font-size: 18px;
+        letter-spacing: 0.1em;
+        margin: 0;
+      }
+      .cta p {
+        color: var(--text-dim);
+        font-size: 14px;
+        line-height: 1.45;
+        margin: 0;
+      }
+      .cta.primary {
+        background: linear-gradient(180deg, #2a1f10 0%, #1a1410 100%);
+        border-color: var(--gold);
+      }
+      .cta.primary h3 { color: var(--gold-bright); }
+
+      details.platform {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        animation: fade-up 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) 0.5s both;
+      }
+      details.platform[open] {
+        border-color: var(--gold);
+      }
+      details.platform summary {
+        cursor: pointer;
+        font-family: var(--font-heading);
+        color: var(--gold);
+        letter-spacing: 0.1em;
+        font-size: 16px;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      details.platform summary::-webkit-details-marker { display: none; }
+      details.platform summary::after {
+        content: "▾";
+        margin-left: auto;
+        transition: transform 0.2s;
+      }
+      details.platform[open] summary::after { transform: rotate(180deg); }
+      details.platform .platform-icon { font-size: 24px; }
+      details.platform .body {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--panel-border);
+        line-height: 1.6;
+        color: var(--text);
+      }
+      details.platform .body ol {
+        margin-left: 22px;
+        margin-top: 8px;
+      }
+      details.platform .body li {
+        margin: 6px 0;
+      }
+      details.platform .body strong { color: var(--gold-bright); }
+      details.platform .body code {
+        background: #0a0806;
+        padding: 2px 8px;
+        border-radius: 3px;
+        color: var(--gold);
+        font-family: 'Consolas', monospace;
+        font-size: 0.92em;
+      }
+
+      .footer {
+        text-align: center;
+        margin-top: 56px;
+        color: var(--text-dim);
+        font-size: 13px;
+      }
+      .footer a {
+        color: var(--gold);
+        text-decoration: none;
+      }
+      .footer a:hover { text-decoration: underline; }
+
+      @keyframes fade-up {
+        from { opacity: 0; transform: translateY(24px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @media (max-width: 600px) {
+        .hero img { height: 160px; }
+        .cta { padding: 18px 14px; }
+        .cta-icon { font-size: 44px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="hero">
+        <img alt="Valdermoor — Episches Fantasy-Abenteuer"
+             src="https://image.pollinations.ai/prompt/Epic%20dark%20fantasy%20castle%20on%20misty%20moor%2C%20dragon%20in%20stormy%20sky%2C%20torches%2C%20cinematic%20lighting?width=1040&height=400&model=flux&seed=42&nologo=true"
+             onerror="this.style.display='none'" />
+        <h1>⚔️ Valdermoor</h1>
+        <p class="tagline">Wo möchtest du dein Abenteuer beginnen?</p>
+      </div>
+
+      <div class="cta-grid">
+        <a href="/" class="cta primary">
+          <div class="cta-icon">🌐</div>
+          <h3>Im Browser spielen</h3>
+          <p>Sofort loslegen — keine Installation, läuft auf jedem Gerät</p>
+        </a>
+        <a href="#install-android" class="cta">
+          <div class="cta-icon">📱</div>
+          <h3>Android-App</h3>
+          <p>Als App auf dein Handy — wie aus dem Play Store</p>
+        </a>
+        <a href="#install-ios" class="cta">
+          <div class="cta-icon">📲</div>
+          <h3>iPhone / iPad</h3>
+          <p>Auf den Home-Screen — als echte App nutzbar</p>
+        </a>
+        <a href="#install-desktop" class="cta">
+          <div class="cta-icon">💻</div>
+          <h3>Desktop-App</h3>
+          <p>Eigenes Fenster, kein Browser-Tab — auf Windows, Mac, Linux</p>
+        </a>
+      </div>
+
+      <details class="platform" id="install-android">
+        <summary><span class="platform-icon">📱</span> Android-App installieren</summary>
+        <div class="body">
+          <ol>
+            <li>Öffne <strong><a href="https://valdermoor.vercel.app" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Chrome</strong> auf deinem Android-Handy.</li>
+            <li>Tippe oben rechts auf das <strong>Drei-Punkte-Menü ⋮</strong>.</li>
+            <li>Wähle <strong>"App installieren"</strong> oder <strong>"Zum Startbildschirm hinzufügen"</strong>.</li>
+            <li>Bestätige mit <strong>"Installieren"</strong>.</li>
+            <li>Fertig — die App liegt jetzt auf deinem Home-Screen wie jede andere App.</li>
+          </ol>
+          <p style="margin-top: 12px; color: var(--text-dim); font-size: 14px;">💡 Funktioniert auch in Edge, Firefox, Samsung Internet — überall heißt's ähnlich.</p>
+        </div>
+      </details>
+
+      <details class="platform" id="install-ios">
+        <summary><span class="platform-icon">📲</span> iPhone / iPad installieren</summary>
+        <div class="body">
+          <ol>
+            <li>Öffne <strong><a href="https://valdermoor.vercel.app" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Safari</strong> (nicht Chrome — das geht auf iOS nicht).</li>
+            <li>Tippe unten auf den <strong>Teilen-Button</strong> (Quadrat mit Pfeil nach oben).</li>
+            <li>Scroll im Menü runter und tippe <strong>"Zum Home-Bildschirm"</strong>.</li>
+            <li>Tippe oben rechts auf <strong>"Hinzufügen"</strong>.</li>
+            <li>Fertig — App-Symbol ist auf deinem Home-Screen.</li>
+          </ol>
+        </div>
+      </details>
+
+      <details class="platform" id="install-desktop">
+        <summary><span class="platform-icon">💻</span> Desktop installieren (Windows · Mac · Linux)</summary>
+        <div class="body">
+          <ol>
+            <li>Öffne <strong><a href="https://valdermoor.vercel.app" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Chrome</strong> oder <strong>Edge</strong>.</li>
+            <li>In der Adressleiste rechts erscheint ein kleines <strong>Install-Symbol ⊕</strong> (oder ein Computer-mit-Pfeil-Symbol).</li>
+            <li>Klick darauf → <strong>"Installieren"</strong>.</li>
+            <li>Alternativ: Drei-Punkte-Menü <strong>⋮</strong> → <strong>"Apps" → "Diese Seite installieren"</strong>.</li>
+            <li>Die App startet im eigenen Fenster, hat ein Icon im Startmenü/Dock und läuft auch wenn der Browser zu ist.</li>
+          </ol>
+          <p style="margin-top: 12px; color: var(--text-dim); font-size: 14px;">💡 Safari auf Mac unterstützt PWA-Installation seit macOS Sonoma — über das Datei-Menü → "Zum Dock hinzufügen".</p>
+        </div>
+      </details>
+
+      <div class="footer">
+        Made with ⚔ by <a href="https://github.com/genben-sb3/valdermoor">Ben Hofstetter</a> · Valdermoor läuft mit KI-Powered Dungeon Master · gratis, ohne Account auf der Browser-Seite, mit Login auf der App
+      </div>
+    </div>
+
+    <script>
+      // Auto-detect platform und open passenden details
+      (() => {
+        const ua = navigator.userAgent.toLowerCase();
+        let target = null;
+        if (/android/.test(ua)) target = 'install-android';
+        else if (/iphone|ipad|ipod/.test(ua)) target = 'install-ios';
+        else if (/windows|mac|linux/.test(ua)) target = 'install-desktop';
+        if (target && location.hash === '') {
+          // Nur passenden Tab öffnen wenn keine spezifische URL angefordert
+          const el = document.getElementById(target);
+          if (el) el.open = true;
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -91,10 +91,14 @@ interface ModelOption {
   hint: string;
 }
 const GROQ_MODELS: ModelOption[] = [
-  { backend: 'groq', model: 'llama-3.3-70b-versatile', label: '🌟 Groq · Llama 3.3 70B (best)', hint: 'beste Qualität, ~500 tok/s' },
-  { backend: 'groq', model: 'llama-3.1-8b-instant',    label: '⚡ Groq · Llama 3.1 8B (fast)',  hint: 'schneller, weniger Rate-Limit-Risiko' },
-  { backend: 'groq', model: 'mixtral-8x7b-32768',      label: '📚 Groq · Mixtral 8x7B (groß)',  hint: 'größerer Kontext, älteres Modell' },
-  { backend: 'groq', model: 'gemma2-9b-it',            label: '💎 Groq · Gemma 2 9B',           hint: 'Google-Modell, kompakt' },
+  // Default: schnell UND smart durch MoE (17B aktiv von 109B total)
+  { backend: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct',     label: '🚀 Groq · Llama 4 Scout (DEFAULT)',     hint: 'super-schnell + smart durch MoE, 128k Kontext' },
+  { backend: 'groq', model: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: '🧠 Groq · Llama 4 Maverick (ultimate)', hint: 'Größtes Llama-4, beste Storytelling-Qualität' },
+  { backend: 'groq', model: 'deepseek-r1-distill-llama-70b',                 label: '🔮 Groq · DeepSeek R1 (reasoning)',     hint: 'Denkt mit Chain-of-Thought, sehr smart' },
+  { backend: 'groq', model: 'qwen-qwq-32b',                                  label: '🎯 Groq · Qwen QwQ (reasoning)',        hint: 'Reasoning-Modell, denkt sehr durch' },
+  { backend: 'groq', model: 'llama-3.3-70b-versatile',                       label: '🦙 Groq · Llama 3.3 70B',               hint: 'Vorheriger Default, immer noch sehr gut' },
+  { backend: 'groq', model: 'llama-3.1-8b-instant',                          label: '⚡ Groq · Llama 3.1 8B (fastest)',      hint: 'extrem schnell, kleineres Modell' },
+  { backend: 'groq', model: 'gemma2-9b-it',                                  label: '💎 Groq · Gemma 2 9B',                  hint: 'Google-Modell, kompakt' },
 ];
 const POLLINATIONS_MODELS: ModelOption[] = [
   { backend: 'pollinations', model: 'openai',       label: '☁ Pollinations · openai (gpt-4o-mini)', hint: 'Default, gut & schnell' },
@@ -1510,6 +1514,10 @@ async function sendToLMStudio(userText: string, speaker: string) {
   }
 
   try {
+    // Reasoning-Modelle (qwen-qwq, deepseek-r1) brauchen mehr Tokens für ihren CoT.
+    const isReasoningModel = useCloud && /qwq|r1-distill|reasoning/i.test(modelId);
+    const cloudMaxTokens = isReasoningModel ? 2000 : 1200;
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers,
@@ -1517,10 +1525,11 @@ async function sendToLMStudio(userText: string, speaker: string) {
         model: modelId,
         messages: trimHistory().map(({ role, content }) => ({ role, content })),
         stream: true,
-        temperature: tiny ? 0.7 : 0.85,
-        max_tokens: tiny ? 150 : useCloud ? 800 : 300,
-        presence_penalty: tiny ? 0.8 : 0.6,
-        frequency_penalty: tiny ? 0.7 : 0.3,
+        temperature: tiny ? 0.7 : 0.9,
+        top_p: 0.95,
+        max_tokens: tiny ? 150 : useCloud ? cloudMaxTokens : 300,
+        presence_penalty: tiny ? 0.8 : 0.4,
+        frequency_penalty: tiny ? 0.7 : 0.2,
       }),
       signal,
     });
