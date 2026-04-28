@@ -110,6 +110,10 @@ function lmAutoStartPlugin(): Plugin {
 }
 
 export default defineConfig({
+  // Relative Pfade damit der Build sowohl auf Vercel (https://) als auch
+  // in Electron (file://) funktioniert. Ohne './' generiert Vite absolute
+  // Pfade die in file:// auf C:\assets\... zeigen → 404.
+  base: './',
   plugins: [lmAutoStartPlugin()],
   server: {
     proxy: {

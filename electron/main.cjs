@@ -15,6 +15,10 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      // file:// Origin wäre sonst 'null' und CORS würde alle externen
+      // API-Calls (Groq, Pollinations, EmailJS, Bilder) blockieren.
+      // Sicher hier weil wir keine Untrusted-Inhalte ausführen.
+      webSecurity: false,
     },
   });
 
