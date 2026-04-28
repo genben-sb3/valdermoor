@@ -153,3 +153,63 @@ Wenn Spieler etwas findet: schreibe [ITEM: Name]. Frage zuerst nach Name und Kla
 5. Würfel-Button klicken → Ergebnis erscheint + wird in Eingabefeld eingefügt
 6. DM erwähnt [ITEM: Schwert] → Inventar aktualisiert sich rechts
 7. Fehlertest: LM Studio stoppen → Fehlermeldung erscheint statt Absturz
+
+---
+
+## Status (28.04.2026)
+
+Was schon läuft:
+- ✅ Live auf https://valdermoor.vercel.app
+- ✅ Cloud-DM via Pollinations + Groq (Llama 4 Scout default, Modell-Switcher)
+- ✅ Auto-Fallback bei Rate-Limit
+- ✅ EmailJS-2FA mit Sicherheits-Fix (Code in Production NIE im Modal)
+- ✅ Mobile-responsive + PWA-installierbar
+- ✅ Native Apps: Windows .exe, macOS .dmg, Linux .AppImage (GitHub Releases)
+- ✅ Stremio-Style Install-Page mit Plattform-Auto-Detection
+- ✅ DM-Stimme: 6 OpenAI-Stimmen via Pollinations (Onyx-Default)
+- ✅ Erzähler-Modus: User kann selbst Story lenken via [ERZÄHLER]-Marker
+- ✅ Admin-Mode für Username "ben": DM erlaubt Cheat-Items kreativ
+- ✅ Klassen-Emojis in Sidebar + Bubbles
+- ✅ Animationen, Glows, Polish
+
+---
+
+## Ideen für die nächsten Sessions
+
+Reihenfolge nach geschätztem Wert (oben = größter Wow-Effekt):
+
+### Quick Wins (je ~30-60 Min)
+- [ ] **Voice-Input**: Mikro-Button, du sprichst, App tippt es ein. Web Speech Recognition API, gratis. (HTML-Button schon da, JS fehlt)
+- [ ] **Charakter-Avatare**: KI-generierte Bilder pro Held (Pollinations Image-API mit Klasse + Name als Prompt, in Sidebar anzeigen)
+- [ ] **Sound-Effekte**: Würfel-Roll-Sound, Item-Pickup-Klang, Schaden-Hit. Free-Sounds von freesound.org oder selbst aufnehmen.
+- [ ] **Stats-Page**: Modal mit Würfel-Statistik, Items-Sammlung, Spielzeit, längste Session.
+
+### Mittel (je 1-3 Stunden)
+- [ ] **Hintergrundmusik**: Atmosphärische Fantasy-Tracks, schaltbar, Lautstärkeregler. Lizenzfreie Musik von incompetech.com oder pixabay.
+- [ ] **Save-Slots**: 3 parallele Spielstände parkbar (statt nur einem). UI im Header oder im Char-Modal.
+- [ ] **Karte / Lokationen**: Kleine ASCII- oder SVG-Karte die DM-Lokationen markiert. DM gibt [ORT: ...]-Tags, Karte aktualisiert sich.
+- [ ] **Achievements**: Trophäen-System (erste Quest, 100 Würfel, KO geschlagen, etc.)
+- [ ] **Eltern-Werbevideo Storyboard**: 30-Sekunden-Clip, Schritt für Schritt mit Voice-Over-Text, AI-Bilder, CapCut-Anleitung.
+
+### Größer (Wochenend-Projekte)
+- [ ] **Multiplayer in Echtzeit**: Mehrere Spieler in derselben Runde via WebSocket. Erfordert Backend (Vercel-Edge-Functions, Supabase, oder Cloudflare Durable Objects).
+- [ ] **Eleven Labs Voice-Cloning**: Eigene Stimme als DM. Braucht $5/Monat-Plan + 30 Sek Aufnahme. API-Key in .env / Vercel-ENV.
+- [ ] **Charakter-Sheet PDF-Export**: aktueller Stand als druckbares PDF.
+- [ ] **Service Worker**: App offline-fähig nach erstem Besuch (Cache-Strategie für statische Assets).
+- [ ] **Mehrsprachig**: Englisch / Französisch / Italienisch dazu (System-Prompt + UI-Strings).
+
+### Optional / Polish
+- [ ] **Custom Domain kaufen** (z.B. valdermoor.ch via SwitchPlus für ~10 CHF/Jahr)
+- [ ] **Eigene Icon-PNGs** (192x192, 512x512) statt favicon.svg im manifest.webmanifest
+- [ ] **Code-Signing** für die EXE damit Windows-Smart-Screen nicht warnt (kostet ~€100/Jahr, nicht nötig für Schule)
+- [ ] **Analytics** (Vercel Web Analytics, gratis): wie viele Besucher, woher, etc.
+- [ ] **Discord-Embed**: Wenn jemand den Link in Discord teilt, schöne Vorschau-Card via Open-Graph-Tags.
+
+---
+
+## Notizen für später
+
+- Groq-Free-Tier reicht für ~50 Spieler/Tag bei normaler Nutzung. Wenn die App wirklich viral geht, auf bezahlten Plan upgraden ($0.05 / 1M Tokens — extrem günstig).
+- EmailJS Free: 200 Mails/Monat. Reicht für ~200 Registrierungen pro Monat. Ab 500/Monat $7/Monat upgraden.
+- Vercel Free: 100 GB Bandwidth/Monat. Würde tausende User schaffen.
+- GitHub Actions Free: 2000 Minuten/Monat für private Repos, **unlimited** für public Repos. Da `valdermoor` public ist → unlimited Builds.
