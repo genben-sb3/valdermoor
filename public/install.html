@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
       rel="stylesheet"
     />
-    <title>Valdermoor — Wo möchtest du spielen?</title>
+    <title>Valdermoor — Download</title>
     <style>
       :root {
         --bg: #0d0d0d;
@@ -35,13 +35,9 @@
         background: var(--bg);
         min-height: 100dvh;
         background:
-          radial-gradient(circle at 20% 10%, #1a1510 0%, transparent 50%),
-          radial-gradient(circle at 80% 90%, #14100c 0%, transparent 50%),
+          radial-gradient(circle at 20% 0%, #1a1510 0%, transparent 60%),
+          radial-gradient(circle at 80% 100%, #14100c 0%, transparent 60%),
           var(--bg);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 24px 16px 60px;
         position: relative;
         overflow-x: hidden;
       }
@@ -57,417 +53,525 @@
           radial-gradient(1px 1px at 45% 88%, rgba(255, 200, 120, 0.3), transparent 50%),
           radial-gradient(1.5px 1.5px at 88% 12%, rgba(180, 140, 80, 0.4), transparent 50%);
         animation: drift 22s ease-in-out infinite alternate;
-        opacity: 0.6;
+        opacity: 0.5;
       }
-      @keyframes drift {
-        from { transform: translateY(0) translateX(0); }
-        to { transform: translateY(-8px) translateX(4px); }
-      }
+      @keyframes drift { from { transform: translateY(0); } to { transform: translateY(-8px) translateX(4px); } }
 
-      .container {
-        max-width: 880px;
-        width: 100%;
+      /* HEADER */
+      .nav {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         position: relative;
         z-index: 1;
       }
+      .logo {
+        font-family: var(--font-heading);
+        color: var(--gold);
+        font-size: 22px;
+        letter-spacing: 0.12em;
+        text-decoration: none;
+      }
+      .nav a.play {
+        background: linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
+        color: #1a1510;
+        padding: 10px 22px;
+        border-radius: 24px;
+        text-decoration: none;
+        font-family: var(--font-heading);
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        transition: transform 0.15s;
+      }
+      .nav a.play:hover { transform: translateY(-2px); }
 
+      /* HERO */
       .hero {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px 24px 24px;
         text-align: center;
-        margin-bottom: 48px;
-        animation: fade-up 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
+        position: relative;
+        z-index: 1;
+        animation: fade-up 0.8s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
       }
       .hero img {
         width: 100%;
-        max-width: 720px;
-        height: 240px;
+        max-width: 800px;
+        height: clamp(180px, 30vw, 320px);
         object-fit: cover;
-        border-radius: 12px;
-        margin-bottom: 24px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        border-radius: 16px;
+        margin-bottom: 32px;
+        box-shadow: 0 28px 80px rgba(0,0,0,0.7);
         background: linear-gradient(135deg, #2a1f15, #0d0d0d);
       }
-      h1 {
+      .hero h1 {
         font-family: var(--font-heading);
         color: var(--gold);
-        font-size: clamp(32px, 6vw, 56px);
-        letter-spacing: 0.08em;
-        margin-bottom: 8px;
+        font-size: clamp(38px, 7vw, 72px);
+        letter-spacing: 0.1em;
+        margin-bottom: 14px;
+        line-height: 1.05;
       }
-      .tagline {
+      .hero p.tagline {
         color: var(--text-dim);
         font-style: italic;
-        font-size: clamp(15px, 2.4vw, 19px);
+        font-size: clamp(16px, 2.6vw, 22px);
+        max-width: 640px;
+        margin: 0 auto 20px;
+        line-height: 1.5;
       }
 
-      .cta-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 16px;
-        margin-bottom: 48px;
+      /* PRIMARY DOWNLOAD (auto-detected) */
+      .primary-download {
+        max-width: 720px;
+        margin: 24px auto 12px;
+        padding: 28px;
+        background: linear-gradient(180deg, #1f1610 0%, var(--panel) 100%);
+        border: 2px solid var(--gold);
+        border-radius: 18px;
+        text-align: center;
+        position: relative;
+        animation: fade-up 0.8s cubic-bezier(0.16, 0.84, 0.32, 1.0) 0.1s both;
+        box-shadow: 0 0 40px rgba(201, 168, 76, 0.2);
       }
-      .cta {
-        background: linear-gradient(180deg, #1a1410 0%, var(--panel) 100%);
-        border: 2px solid var(--panel-border);
-        border-radius: 12px;
+      .primary-download .platform-icon {
+        font-size: 64px;
+        line-height: 1;
+        filter: drop-shadow(0 0 12px rgba(233, 198, 107, 0.5));
+        margin-bottom: 8px;
+      }
+      .primary-download h2 {
+        font-family: var(--font-heading);
+        color: var(--gold-bright);
+        font-size: clamp(20px, 3vw, 28px);
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+      }
+      .primary-download p.sub {
+        color: var(--text-dim);
+        font-size: 15px;
+        margin-bottom: 20px;
+      }
+      .download-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
+        color: #1a1510;
+        padding: 16px 36px;
+        border-radius: 14px;
+        font-family: var(--font-heading);
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 6px 20px rgba(201, 168, 76, 0.45);
+        transition: all 0.2s;
+      }
+      .download-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 28px rgba(233, 198, 107, 0.6);
+      }
+      .download-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .download-btn .arrow { font-size: 22px; }
+      .download-meta {
+        margin-top: 14px;
+        color: var(--text-dim);
+        font-size: 13px;
+      }
+      .download-meta span { color: var(--gold); }
+
+      /* OTHER PLATFORMS */
+      .others {
+        max-width: 1200px;
+        margin: 56px auto 24px;
+        padding: 0 24px;
+        position: relative;
+        z-index: 1;
+      }
+      .others h3 {
+        text-align: center;
+        font-family: var(--font-heading);
+        color: var(--text-dim);
+        letter-spacing: 0.15em;
+        font-size: 14px;
+        margin-bottom: 24px;
+        text-transform: uppercase;
+      }
+      .platform-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+      }
+      .platform-card {
+        background: var(--panel);
+        border: 1.5px solid var(--panel-border);
+        border-radius: 14px;
         padding: 24px 20px;
         text-align: center;
         text-decoration: none;
         color: var(--text);
         cursor: pointer;
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
+        transition: all 0.25s;
         animation: fade-up 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
       }
-      .cta:nth-child(1) { animation-delay: 0.1s; }
-      .cta:nth-child(2) { animation-delay: 0.2s; }
-      .cta:nth-child(3) { animation-delay: 0.3s; }
-      .cta:nth-child(4) { animation-delay: 0.4s; }
-      .cta:hover {
+      .platform-card:hover {
         border-color: var(--gold);
         transform: translateY(-4px);
-        box-shadow:
-          0 0 0 1px var(--gold),
-          0 16px 40px rgba(201, 168, 76, 0.2);
+        box-shadow: 0 12px 28px rgba(0,0,0,0.5);
       }
-      .cta-icon {
-        font-size: 56px;
-        line-height: 1;
-        filter: drop-shadow(0 0 8px rgba(233, 198, 107, 0.4));
-      }
-      .cta h3 {
+      .platform-card .picon { font-size: 44px; line-height: 1; margin-bottom: 10px; display: block; }
+      .platform-card h4 {
         font-family: var(--font-heading);
         color: var(--gold);
-        font-size: 18px;
-        letter-spacing: 0.1em;
-        margin: 0;
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
       }
-      .cta p {
-        color: var(--text-dim);
-        font-size: 14px;
-        line-height: 1.45;
-        margin: 0;
-      }
-      .cta.primary {
-        background: linear-gradient(180deg, #2a1f10 0%, #1a1410 100%);
-        border-color: var(--gold);
-      }
-      .cta.primary h3 { color: var(--gold-bright); }
+      .platform-card p { color: var(--text-dim); font-size: 13px; line-height: 1.4; }
 
-      details.platform {
+      /* FAQ */
+      .faq {
+        max-width: 720px;
+        margin: 64px auto 24px;
+        padding: 0 24px;
+        position: relative;
+        z-index: 1;
+      }
+      .faq h3 {
+        text-align: center;
+        font-family: var(--font-heading);
+        color: var(--gold);
+        letter-spacing: 0.12em;
+        font-size: 18px;
+        margin-bottom: 20px;
+      }
+      details {
         background: var(--panel);
         border: 1px solid var(--panel-border);
         border-radius: 8px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
-        animation: fade-up 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) 0.5s both;
+        padding: 14px 18px;
+        margin-bottom: 8px;
       }
-      details.platform[open] {
-        border-color: var(--gold);
-      }
-      details.platform summary {
+      details[open] { border-color: var(--gold); }
+      details summary {
         cursor: pointer;
         font-family: var(--font-heading);
         color: var(--gold);
-        letter-spacing: 0.1em;
-        font-size: 16px;
+        letter-spacing: 0.08em;
+        font-size: 14px;
         list-style: none;
-        display: flex;
-        align-items: center;
-        gap: 12px;
       }
-      details.platform summary::-webkit-details-marker { display: none; }
-      details.platform summary::after {
-        content: "▾";
-        margin-left: auto;
-        transition: transform 0.2s;
-      }
-      details.platform[open] summary::after { transform: rotate(180deg); }
-      details.platform .platform-icon { font-size: 24px; }
-      details.platform .body {
-        margin-top: 14px;
-        padding-top: 14px;
+      details summary::-webkit-details-marker { display: none; }
+      details summary::before { content: "▸ "; }
+      details[open] summary::before { content: "▾ "; }
+      details .body {
+        margin-top: 12px;
+        padding-top: 12px;
         border-top: 1px solid var(--panel-border);
         line-height: 1.6;
         color: var(--text);
+        font-size: 15px;
       }
-      details.platform .body ol {
-        margin-left: 22px;
-        margin-top: 8px;
-      }
-      details.platform .body li {
-        margin: 6px 0;
-      }
-      details.platform .body strong { color: var(--gold-bright); }
-      details.platform .body code {
-        background: #0a0806;
-        padding: 2px 8px;
-        border-radius: 3px;
-        color: var(--gold);
-        font-family: 'Consolas', monospace;
-        font-size: 0.92em;
-      }
+      details .body ol { margin-left: 22px; margin-top: 6px; }
+      details .body li { margin: 4px 0; }
+      details .body strong { color: var(--gold-bright); }
 
       .footer {
         text-align: center;
-        margin-top: 56px;
+        margin: 56px 0 30px;
         color: var(--text-dim);
         font-size: 13px;
+        position: relative;
+        z-index: 1;
       }
-      .footer a {
-        color: var(--gold);
-        text-decoration: none;
-      }
+      .footer a { color: var(--gold); text-decoration: none; }
       .footer a:hover { text-decoration: underline; }
 
       @keyframes fade-up {
-        from { opacity: 0; transform: translateY(24px); }
+        from { opacity: 0; transform: translateY(28px); }
         to { opacity: 1; transform: translateY(0); }
       }
 
       @media (max-width: 600px) {
-        .hero img { height: 160px; }
-        .cta { padding: 18px 14px; }
-        .cta-icon { font-size: 44px; }
+        .nav { padding: 14px 16px; }
+        .hero { padding: 20px 16px 16px; }
+        .primary-download { padding: 22px 18px; margin: 16px 16px 0; }
+        .download-btn { padding: 14px 28px; font-size: 15px; }
       }
-
-      /* Big Install-Button */
-      .big-install {
-        display: block;
-        width: 100%;
-        max-width: 400px;
-        margin: 32px auto 0;
-        padding: 18px 28px;
-        background: linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
-        color: #1a1510;
-        border: none;
-        border-radius: 14px;
-        font-family: var(--font-heading);
-        font-size: 18px;
-        font-weight: 700;
-        letter-spacing: 0.1em;
-        cursor: pointer;
-        box-shadow: 0 6px 24px rgba(201, 168, 76, 0.4), 0 0 0 1px rgba(0,0,0,0.3);
-        transition: all 0.2s;
-        animation: install-glow 2.4s ease-in-out infinite;
-      }
-      .big-install:hover {
-        transform: translateY(-3px) scale(1.03);
-        box-shadow: 0 10px 32px rgba(233, 198, 107, 0.6), 0 0 0 1px rgba(0,0,0,0.3);
-      }
-      .big-install:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        animation: none;
-      }
-      @keyframes install-glow {
-        0%, 100% { box-shadow: 0 6px 24px rgba(201, 168, 76, 0.4), 0 0 0 1px rgba(0,0,0,0.3); }
-        50%      { box-shadow: 0 6px 36px rgba(233, 198, 107, 0.7), 0 0 0 1px rgba(0,0,0,0.3); }
-      }
-      .install-status {
-        text-align: center;
-        margin-top: 12px;
-        color: var(--text-dim);
-        font-size: 14px;
-        font-style: italic;
-      }
-      .install-status.success { color: var(--gold-bright); font-style: normal; font-weight: 600; }
-      .install-status.error { color: #ff8080; }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="hero">
-        <img alt="Valdermoor — Episches Fantasy-Abenteuer"
-             src="https://image.pollinations.ai/prompt/Epic%20dark%20fantasy%20castle%20on%20misty%20moor%2C%20dragon%20in%20stormy%20sky%2C%20torches%2C%20cinematic%20lighting?width=1040&height=400&model=flux&seed=42&nologo=true"
-             onerror="this.style.display='none'" />
-        <h1>⚔️ Valdermoor</h1>
-        <p class="tagline">Wo möchtest du dein Abenteuer beginnen?</p>
-      </div>
+    <nav class="nav">
+      <a href="/" class="logo">⚔ VALDERMOOR</a>
+      <a href="/" class="play">🌐 Im Browser spielen</a>
+    </nav>
 
-      <div class="cta-grid">
-        <a href="/" class="cta primary">
-          <div class="cta-icon">🌐</div>
-          <h3>Im Browser spielen</h3>
-          <p>Sofort loslegen — keine Installation, läuft auf jedem Gerät</p>
-        </a>
-        <a href="#install-android" class="cta">
-          <div class="cta-icon">📱</div>
-          <h3>Android-App</h3>
-          <p>Als App auf dein Handy — wie aus dem Play Store</p>
-        </a>
-        <a href="#install-ios" class="cta">
-          <div class="cta-icon">📲</div>
-          <h3>iPhone / iPad</h3>
-          <p>Auf den Home-Screen — als echte App nutzbar</p>
-        </a>
-        <a href="#install-desktop" class="cta">
-          <div class="cta-icon">💻</div>
-          <h3>Desktop-App</h3>
-          <p>Eigenes Fenster, kein Browser-Tab — auf Windows, Mac, Linux</p>
-        </a>
-      </div>
+    <section class="hero">
+      <img alt="Valdermoor — Episches Fantasy-Abenteuer"
+           src="https://image.pollinations.ai/prompt/Epic%20dark%20fantasy%20castle%20on%20misty%20moor%2C%20dragon%20in%20stormy%20sky%2C%20torches%2C%20cinematic%20lighting?width=1200&height=480&model=flux&seed=42&nologo=true"
+           onerror="this.style.display='none'" />
+      <h1>Valdermoor herunterladen</h1>
+      <p class="tagline">Spiele D&amp;D-Abenteuer mit einem KI-Dungeon-Master — als App, die wie eine echte Software auf deinem Gerät läuft.</p>
+    </section>
 
-      <button id="big-install-btn" class="big-install" disabled>
-        ⏳ Install-Button wird vorbereitet…
+    <section class="primary-download" id="primary">
+      <div class="platform-icon" id="primary-icon">⏳</div>
+      <h2 id="primary-title">Wird erkannt…</h2>
+      <p class="sub" id="primary-sub">Warte kurz, ich finde die richtige Version für dein Gerät.</p>
+      <a id="primary-btn" class="download-btn" href="#" style="display:none;">
+        <span id="primary-btn-icon">⬇</span>
+        <span id="primary-btn-label">Download</span>
+        <span class="arrow">→</span>
+      </a>
+      <button id="pwa-install-btn" class="download-btn" style="display:none;">
+        <span>📲</span>
+        <span>Jetzt als App installieren</span>
+        <span class="arrow">→</span>
       </button>
-      <p id="install-status" class="install-status">
-        Wenn dein Browser PWAs unterstützt (Chrome, Edge, Brave, Samsung Internet), erscheint hier ein direkter Installier-Knopf.
-      </p>
+      <p class="download-meta" id="primary-meta"></p>
+    </section>
 
-      <details class="platform" id="install-android">
-        <summary><span class="platform-icon">📱</span> Android-App installieren</summary>
-        <div class="body">
-          <ol>
-            <li>Öffne <strong><a href="https://valdermoor.vercel.app" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Chrome</strong> auf deinem Android-Handy.</li>
-            <li>Tippe oben rechts auf das <strong>Drei-Punkte-Menü ⋮</strong>.</li>
-            <li>Wähle <strong>"App installieren"</strong> oder <strong>"Zum Startbildschirm hinzufügen"</strong>.</li>
-            <li>Bestätige mit <strong>"Installieren"</strong>.</li>
-            <li>Fertig — die App liegt jetzt auf deinem Home-Screen wie jede andere App.</li>
-          </ol>
-          <p style="margin-top: 12px; color: var(--text-dim); font-size: 14px;">💡 Funktioniert auch in Edge, Firefox, Samsung Internet — überall heißt's ähnlich.</p>
-        </div>
-      </details>
-
-      <details class="platform" id="install-ios">
-        <summary><span class="platform-icon">📲</span> iPhone / iPad installieren</summary>
-        <div class="body">
-          <ol>
-            <li>Öffne <strong><a href="https://valdermoor.vercel.app" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Safari</strong> (nicht Chrome — das geht auf iOS nicht).</li>
-            <li>Tippe unten auf den <strong>Teilen-Button</strong> (Quadrat mit Pfeil nach oben).</li>
-            <li>Scroll im Menü runter und tippe <strong>"Zum Home-Bildschirm"</strong>.</li>
-            <li>Tippe oben rechts auf <strong>"Hinzufügen"</strong>.</li>
-            <li>Fertig — App-Symbol ist auf deinem Home-Screen.</li>
-          </ol>
-        </div>
-      </details>
-
-      <details class="platform" id="install-desktop">
-        <summary><span class="platform-icon">💻</span> Desktop installieren (Windows · Mac · Linux)</summary>
-        <div class="body">
-          <ol>
-            <li>Öffne <strong><a href="https://valdermoor.vercel.app" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Chrome</strong> oder <strong>Edge</strong>.</li>
-            <li>In der Adressleiste rechts erscheint ein kleines <strong>Install-Symbol ⊕</strong> (oder ein Computer-mit-Pfeil-Symbol).</li>
-            <li>Klick darauf → <strong>"Installieren"</strong>.</li>
-            <li>Alternativ: Drei-Punkte-Menü <strong>⋮</strong> → <strong>"Apps" → "Diese Seite installieren"</strong>.</li>
-            <li>Die App startet im eigenen Fenster, hat ein Icon im Startmenü/Dock und läuft auch wenn der Browser zu ist.</li>
-          </ol>
-          <p style="margin-top: 12px; color: var(--text-dim); font-size: 14px;">💡 Safari auf Mac unterstützt PWA-Installation seit macOS Sonoma — über das Datei-Menü → "Zum Dock hinzufügen".</p>
-        </div>
-      </details>
-
-      <div class="footer">
-        Made with ⚔ by <a href="https://github.com/genben-sb3/valdermoor">Ben Hofstetter</a> · Valdermoor läuft mit KI-Powered Dungeon Master · gratis, ohne Account auf der Browser-Seite, mit Login auf der App
+    <section class="others">
+      <h3>— Andere Plattformen —</h3>
+      <div class="platform-grid" id="grid">
+        <a class="platform-card" data-platform="windows" href="#">
+          <span class="picon">🪟</span>
+          <h4>Windows</h4>
+          <p>.exe Installer · 64-bit</p>
+        </a>
+        <a class="platform-card" data-platform="mac" href="#">
+          <span class="picon">🍎</span>
+          <h4>macOS</h4>
+          <p>.dmg · Universal</p>
+        </a>
+        <a class="platform-card" data-platform="linux" href="#">
+          <span class="picon">🐧</span>
+          <h4>Linux</h4>
+          <p>.AppImage · 64-bit</p>
+        </a>
+        <a class="platform-card" data-platform="android" href="#install-android">
+          <span class="picon">📱</span>
+          <h4>Android</h4>
+          <p>PWA · via Chrome</p>
+        </a>
+        <a class="platform-card" data-platform="ios" href="#install-ios">
+          <span class="picon">📲</span>
+          <h4>iPhone / iPad</h4>
+          <p>PWA · via Safari</p>
+        </a>
+        <a class="platform-card" data-platform="web" href="/">
+          <span class="picon">🌐</span>
+          <h4>Im Browser</h4>
+          <p>Sofort, keine Installation</p>
+        </a>
       </div>
+    </section>
+
+    <section class="faq">
+      <h3>Häufige Fragen</h3>
+      <details>
+        <summary>Ich finde keinen Download-Knopf, was tun?</summary>
+        <div class="body">
+          <p>Falls Windows/Mac/Linux noch <strong>"Coming Soon"</strong> zeigt: Die Native-App-Versionen werden gerade von GitHub Actions gebaut, das dauert beim ersten Mal ~10 Minuten nach jedem Tag-Push. Schau bei <a href="https://github.com/genben-sb3/valdermoor/releases" style="color:var(--gold-bright)">GitHub Releases</a> direkt vorbei.</p>
+          <p style="margin-top:8px">In der Zwischenzeit: <strong>Im Browser spielen</strong> oder die <strong>PWA-Version</strong> als App installieren — die ist jederzeit verfügbar.</p>
+        </div>
+      </details>
+      <details id="install-android">
+        <summary>📱 Android: PWA-Installation Schritt für Schritt</summary>
+        <div class="body">
+          <ol>
+            <li>Öffne <strong><a href="/" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Chrome</strong>.</li>
+            <li>Drei-Punkte-Menü ⋮ oben rechts → <strong>"App installieren"</strong>.</li>
+            <li>Bestätigen → App-Icon erscheint im Home-Screen.</li>
+          </ol>
+        </div>
+      </details>
+      <details id="install-ios">
+        <summary>📲 iPhone / iPad: PWA-Installation Schritt für Schritt</summary>
+        <div class="body">
+          <ol>
+            <li>Öffne <strong><a href="/" style="color:var(--gold-bright)">valdermoor.vercel.app</a></strong> in <strong>Safari</strong> (geht nicht in Chrome auf iOS).</li>
+            <li>Tippe unten auf <strong>Teilen-Button</strong> (Quadrat mit Pfeil).</li>
+            <li>Wähle <strong>"Zum Home-Bildschirm"</strong> → <strong>"Hinzufügen"</strong>.</li>
+          </ol>
+        </div>
+      </details>
+      <details>
+        <summary>Ist das eine "echte" App oder nur ein Browser-Lesezeichen?</summary>
+        <div class="body">
+          <p><strong>Windows / Mac / Linux Native-Apps</strong> (.exe / .dmg / .AppImage): Echte Software, läuft als eigener Prozess, eigenes Fenster, im Startmenü/Dock — wie jede andere Desktop-App. Basiert auf Electron.</p>
+          <p style="margin-top:8px"><strong>PWA</strong> (Android/iOS Add-to-Home-Screen): Nicht ganz "nativ" — aber eigenes Fenster ohne Browser-UI, eigenes Icon, separater Prozess. Für 99% der User nicht von einer nativen App zu unterscheiden.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Kostet das was?</summary>
+        <div class="body">
+          <p>Nope. Komplett kostenlos. Open Source, kein Tracking, kein Account, kein In-App-Kauf. Made with ⚔ by Ben.</p>
+        </div>
+      </details>
+    </section>
+
+    <div class="footer">
+      Made with ⚔ by <a href="https://github.com/genben-sb3/valdermoor">Ben Hofstetter</a> ·
+      <a href="https://github.com/genben-sb3/valdermoor/releases">GitHub Releases</a> ·
+      <a href="/">Im Browser spielen</a>
     </div>
 
     <script>
-      // ─── Auto-detect Plattform ───
-      (() => {
+      // ─── Plattform-Detection ───
+      function detectPlatform() {
         const ua = navigator.userAgent.toLowerCase();
-        let target = null;
-        if (/android/.test(ua)) target = 'install-android';
-        else if (/iphone|ipad|ipod/.test(ua)) target = 'install-ios';
-        else if (/windows|mac|linux/.test(ua)) target = 'install-desktop';
-        if (target && location.hash === '') {
-          const el = document.getElementById(target);
-          if (el) el.open = true;
-        }
-      })();
+        const platform = navigator.platform?.toLowerCase() || '';
+        if (/iphone|ipad|ipod/.test(ua)) return 'ios';
+        if (/android/.test(ua)) return 'android';
+        if (/win/.test(platform) || /windows/.test(ua)) return 'windows';
+        if (/mac/.test(platform) || /macintosh/.test(ua)) return 'mac';
+        if (/linux/.test(platform) || /linux/.test(ua)) return 'linux';
+        return 'web';
+      }
 
-      // ─── Echter PWA-Install-Button ───
-      // Browser feuert "beforeinstallprompt" wenn die App installierbar ist.
-      // Wir capturen das Event, zeigen unseren Knopf, und triggern es per Klick.
+      // ─── Latest Release URLs (GitHub) ───
+      // Wir nutzen "/latest/download/" Pattern: GitHub leitet automatisch zum
+      // neuesten Release-Asset weiter. Sobald der erste Tag (v0.1.0) gebaut ist,
+      // sind diese Links live.
+      const RELEASES = 'https://github.com/genben-sb3/valdermoor/releases';
+      const LATEST   = 'https://github.com/genben-sb3/valdermoor/releases/latest/download';
+
+      const PLATFORM_INFO = {
+        windows: {
+          icon: '🪟',
+          title: 'Download für Windows',
+          sub: 'Echter .exe Installer — installiert wie jede andere Software',
+          file: `${LATEST}/Valdermoor-Setup-0.1.0.exe`,
+          ext: '.exe',
+          fallback: RELEASES,
+        },
+        mac: {
+          icon: '🍎',
+          title: 'Download für macOS',
+          sub: '.dmg Installer — Universal (Intel + Apple Silicon)',
+          file: `${LATEST}/Valdermoor-0.1.0.dmg`,
+          ext: '.dmg',
+          fallback: RELEASES,
+        },
+        linux: {
+          icon: '🐧',
+          title: 'Download für Linux',
+          sub: 'AppImage — kein Install nötig, doppelklick, läuft',
+          file: `${LATEST}/Valdermoor-0.1.0.AppImage`,
+          ext: '.AppImage',
+          fallback: RELEASES,
+        },
+        android: {
+          icon: '📱',
+          title: 'Auf Android installieren',
+          sub: 'Als App via Chrome → Drei-Punkte-Menü → "App installieren"',
+          pwa: true,
+        },
+        ios: {
+          icon: '📲',
+          title: 'Auf iPhone / iPad installieren',
+          sub: 'Als App via Safari → Teilen-Button → "Zum Home-Bildschirm"',
+          pwa: true,
+        },
+        web: {
+          icon: '🌐',
+          title: 'Im Browser spielen',
+          sub: 'Keine Installation, läuft direkt — auf jedem Gerät',
+          file: '/',
+          ext: '',
+          fallback: '/',
+        },
+      };
+
+      const platform = detectPlatform();
+      const info = PLATFORM_INFO[platform];
+
+      document.getElementById('primary-icon').textContent  = info.icon;
+      document.getElementById('primary-title').textContent = info.title;
+      document.getElementById('primary-sub').textContent   = info.sub;
+
+      const btn  = document.getElementById('primary-btn');
+      const pwaBtn = document.getElementById('pwa-install-btn');
+      const meta = document.getElementById('primary-meta');
+
+      if (info.pwa) {
+        // Mobile: PWA-Install-Knopf zeigen (oder Anleitung)
+        pwaBtn.style.display = 'inline-flex';
+        meta.innerHTML = 'Browser-PWA · ohne Account · gratis';
+      } else {
+        btn.href = info.file;
+        btn.style.display = 'inline-flex';
+        document.getElementById('primary-btn-icon').textContent = '⬇';
+        document.getElementById('primary-btn-label').textContent =
+          platform === 'web' ? 'Jetzt spielen' : `Download${info.ext}`;
+        meta.innerHTML = platform === 'web'
+          ? 'Im Browser · sofort spielbar'
+          : `<span>${info.ext}</span> · 64-bit · ~80 MB`;
+      }
+
+      // ─── PWA Install Logic ───
       let deferredPrompt = null;
-      const installBtn = document.getElementById('big-install-btn');
-      const statusEl   = document.getElementById('install-status');
-
       function isStandalone() {
         return window.matchMedia('(display-mode: standalone)').matches
             || window.navigator.standalone === true;
       }
 
-      if (isStandalone()) {
-        installBtn.disabled = true;
-        installBtn.textContent = '✓ App ist bereits installiert';
-        installBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
-        installBtn.style.color = '#7bc080';
-        statusEl.textContent = 'Du benutzt gerade die installierte Version.';
-        statusEl.classList.add('success');
-      }
-
       window.addEventListener('beforeinstallprompt', (e) => {
-        // Browser will den Default-Prompt zeigen — wir fangen ab und zeigen unseren Knopf.
         e.preventDefault();
         deferredPrompt = e;
-        installBtn.disabled = false;
-        installBtn.textContent = '⚔ Valdermoor jetzt installieren';
-        statusEl.textContent = 'Klick den Knopf — dein Browser fragt einmal nach, dann ist die App installiert. Im Startmenü/Home-Screen sichtbar wie jede andere App.';
+        if (info.pwa) {
+          pwaBtn.disabled = false;
+        }
       });
 
-      installBtn.addEventListener('click', async () => {
-        if (!deferredPrompt) {
-          // Kein Prompt verfügbar — entweder schon installiert, oder Browser unterstützt's nicht
-          // (z.B. Safari iOS — dort muss man manuell über "Teilen → Zum Home-Bildschirm")
-          const ua = navigator.userAgent.toLowerCase();
-          if (/iphone|ipad|ipod/.test(ua)) {
-            statusEl.textContent = 'iPhone/iPad: Tippe unten auf den Teilen-Button (Quadrat mit Pfeil) → "Zum Home-Bildschirm" → "Hinzufügen". (Safari erlaubt keinen automatischen Install.)';
-            statusEl.classList.add('error');
-            document.getElementById('install-ios').open = true;
-            document.getElementById('install-ios').scrollIntoView({ behavior: 'smooth' });
-          } else {
-            statusEl.textContent = 'Dein Browser unterstützt keinen Auto-Install. Schau weiter unten in der Plattform-Anleitung.';
-            statusEl.classList.add('error');
+      pwaBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          if (outcome === 'accepted') {
+            pwaBtn.innerHTML = '<span>✓</span><span>Installiert!</span>';
+            pwaBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
+            pwaBtn.style.color = '#7bc080';
           }
-          return;
-        }
-
-        installBtn.disabled = true;
-        installBtn.textContent = '⏳ Installation läuft…';
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        deferredPrompt = null;
-
-        if (outcome === 'accepted') {
-          installBtn.textContent = '✓ Installiert!';
-          installBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
-          installBtn.style.color = '#7bc080';
-          statusEl.textContent = '🎉 Valdermoor ist installiert! Du findest die App im Startmenü/Home-Screen. Beim nächsten Klick wird sie als Standalone-Fenster geöffnet.';
-          statusEl.classList.add('success');
         } else {
-          installBtn.disabled = false;
-          installBtn.textContent = '⚔ Valdermoor jetzt installieren';
-          statusEl.textContent = 'Installation abgebrochen — kannst es jederzeit nochmal versuchen.';
+          // Kein Auto-Install verfügbar (Safari iOS) — Anleitung zeigen
+          const target = platform === 'ios' ? 'install-ios' : 'install-android';
+          const el = document.getElementById(target);
+          if (el) {
+            el.open = true;
+            el.scrollIntoView({ behavior: 'smooth' });
+          }
         }
       });
 
-      window.addEventListener('appinstalled', () => {
-        installBtn.disabled = true;
-        installBtn.textContent = '✓ Installiert!';
-        installBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
-        installBtn.style.color = '#7bc080';
-        statusEl.textContent = '🎉 Installation erfolgreich. Schließ den Tab und öffne die App über dein Startmenü/Home-Screen.';
-        statusEl.classList.add('success');
-      });
+      if (isStandalone()) {
+        document.querySelector('.primary-download').style.display = 'none';
+      }
 
-      // ─── Fallback nach 2s falls beforeinstallprompt nie kommt ───
-      // (z.B. Firefox auf Desktop, Safari iOS, oder schon installiert)
-      setTimeout(() => {
-        if (deferredPrompt || isStandalone()) return;  // alles ok
-        installBtn.disabled = false;
-        const ua = navigator.userAgent.toLowerCase();
-        if (/iphone|ipad|ipod/.test(ua)) {
-          installBtn.textContent = '📲 iPhone-Anleitung anzeigen';
-        } else if (/firefox/.test(ua)) {
-          installBtn.textContent = 'ℹ Firefox: manuell installieren (Anleitung lesen)';
-          statusEl.textContent = 'Firefox unterstützt PWA-Auto-Install nicht direkt. Folge der Anleitung weiter unten oder nutze Chrome/Edge.';
-        } else {
-          installBtn.textContent = '📋 Anleitung anzeigen';
-          statusEl.textContent = 'Browser meldet keine Install-Fähigkeit. Wahrscheinliche Gründe: schon installiert, Browser unterstützt PWAs nicht (Firefox), oder es fehlt HTTPS. Folge der Anleitung weiter unten.';
+      // ─── Andere Plattformen Click-Handlers ───
+      document.querySelectorAll('.platform-card').forEach((card) => {
+        const p = card.dataset.platform;
+        const pinfo = PLATFORM_INFO[p];
+        if (!pinfo) return;
+        if (pinfo.file) {
+          card.href = pinfo.file;
         }
-      }, 2000);
+        // Bei PWA-Plattformen ohne file: bleibt der Anchor-Link zur FAQ
+      });
     </script>
   </body>
 </html>

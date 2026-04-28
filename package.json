@@ -1,18 +1,71 @@
 {
   "name": "valdermoor-dm",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Valdermoor — D&D KI-Dungeon-Master",
+  "author": "Ben Hofstetter <278487459+genben-sb3@users.noreply.github.com>",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "electron:build:win": "npm run build && electron-builder --win --publish never",
+    "electron:build:mac": "npm run build && electron-builder --mac --publish never",
+    "electron:build:linux": "npm run build && electron-builder --linux --publish never"
   },
   "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.10"
   },
   "dependencies": {
     "pdfjs-dist": "^5.6.205"
+  },
+  "build": {
+    "appId": "app.valdermoor.dm",
+    "productName": "Valdermoor",
+    "copyright": "Copyright © 2026 Ben Hofstetter",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "Valdermoor-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Valdermoor",
+      "uninstallDisplayName": "Valdermoor"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["universal"] }
+      ],
+      "category": "public.app-category.games",
+      "artifactName": "Valdermoor-${version}.${ext}",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "category": "Game",
+      "artifactName": "Valdermoor-${version}.${ext}"
+    }
   }
 }

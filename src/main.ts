@@ -171,6 +171,70 @@ function setCloudModel(backend: CloudBackend, model: string) {
   setStatus(`Cloud · ${backend === 'groq' ? 'Groq' : 'Pollinations'} (${model})`, 'ok');
 }
 
+// ────────────────────────────────────────────────────────────
+// Voice (Text-to-Speech für DM-Antworten)
+// ────────────────────────────────────────────────────────────
+
+const VOICE_PREF_KEY = 'valdermoor:voiceEnabled';
+let voiceEnabled = false;
+try {
+  voiceEnabled = localStorage.getItem(VOICE_PREF_KEY) === '1';
+} catch { /* ignore */ }
+
+function speak(text: string) {
+  if (!voiceEnabled || !text.trim()) return;
+  if (!('speechSynthesis' in window)) return;
+  // Vorherige Sprache stoppen falls neue kommt
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'de-DE';
+  utterance.rate = 1.0;
+  utterance.pitch = 0.9;  // etwas tiefer für DM-Feel
+
+  // Bevorzuge eine deutsche, männliche, "tiefe" Stimme falls verfügbar
+  const voices = window.speechSynthesis.getVoices();
+  const germanVoices = voices.filter((v) => /^de/i.test(v.lang));
+  const preferred =
+    germanVoices.find((v) => /(male|markus|stefan|hans|conrad|jonas)/i.test(v.name)) ||
+    germanVoices.find((v) => v.localService) ||
+    germanVoices[0];
+  if (preferred) utterance.voice = preferred;
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+function setupVoiceToggle() {
+  const btn = document.getElementById('voice-toggle-btn') as HTMLButtonElement | null;
+  if (!btn) return;
+  if (!('speechSynthesis' in window)) {
+    btn.style.display = 'none';
+    return;
+  }
+  const updateUI = () => {
+    btn.textContent = voiceEnabled ? '🔊 Stimme an' : '🔇 Stimme aus';
+    btn.title = voiceEnabled ? 'DM liest Antworten vor — klick zum Stummschalten' : 'Klick um den DM vorlesen zu lassen';
+  };
+  updateUI();
+  btn.addEventListener('click', () => {
+    voiceEnabled = !voiceEnabled;
+    try { localStorage.setItem(VOICE_PREF_KEY, voiceEnabled ? '1' : '0'); } catch { /* */ }
+    if (!voiceEnabled) stopSpeaking();
+    updateUI();
+  });
+
+  // Stimmen-Liste asynchron laden (Chrome quirk)
+  if ('onvoiceschanged' in window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => { /* trigger voice list */ };
+  }
+}
+
 function setupModelSwitcher() {
   const wrap = document.getElementById('model-switcher-wrap') as HTMLLabelElement | null;
   const select = document.getElementById('model-switcher') as HTMLSelectElement | null;
@@ -1621,6 +1685,8 @@ async function sendToLMStudio(userText: string, speaker: string) {
     }
     setStatus('Bereit', 'ok');
     saveGame();
+    // DM-Antwort vorlesen (wenn Voice aktiv) — Tags werden vorher gestrippt
+    speak(stripGameTags(fullText));
   } catch (err) {
     if ((err as { name?: string })?.name === 'AbortError') {
       dmBody.parentElement?.remove();
@@ -2231,6 +2297,7 @@ function init() {
   setupDiceButtons();
   setupInputForm();
   setupModelSwitcher();
+  setupVoiceToggle();
 
   window.addEventListener('beforeunload', () => {
     currentAbortController?.abort();

@@ -1,0 +1,66 @@
+name: Build Desktop Apps (Win + Mac + Linux)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: electron:build:win
+          - os: macos-latest
+            script: electron:build:mac
+          - os: ubuntu-latest
+            script: electron:build:linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build Vite + Electron
+        run: npm run ${{ matrix.script }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Vite ENV-Vars vom Repository-Secrets durchreichen
+          VITE_GROQ_API_KEY: ${{ secrets.VITE_GROQ_API_KEY }}
+          VITE_GROQ_MODEL: ${{ secrets.VITE_GROQ_MODEL }}
+          VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
+          VITE_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_EMAILJS_TEMPLATE_ID }}
+          VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: valdermoor-${{ runner.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+          generate_release_notes: true
