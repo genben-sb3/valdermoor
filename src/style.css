@@ -275,6 +275,28 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: var(--gold-bright);
   font-family: var(--font-body);
 }
+#logout-btn {
+  margin-left: auto;
+  background: linear-gradient(180deg, #2a1410, #1a0c08);
+  border: 1.5px solid #b84848;
+  color: #ff9999;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.1em;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+#logout-btn:hover {
+  background: linear-gradient(180deg, #3a1a14, #2a1410);
+  border-color: #ff8080;
+  color: #ffcccc;
+  box-shadow: 0 0 12px rgba(184, 72, 72, 0.4);
+}
+#logout-btn::before {
+  content: "🚪 ";
+}
 .text-btn {
   background: none;
   border: none;

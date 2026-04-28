@@ -119,6 +119,15 @@ const CLASS_EMOJI: Record<string, string> = {
   'Hexenmeister': '🔮',
 };
 
+// Admin-Mode: Diese User dürfen vom DM ungewöhnliche Items spawnen lassen
+// (Pistolen, Raketen, futuristische Tech). Der DM weicht für sie die
+// Fantasy-Realismus-Regel kreativ auf, statt "geht nicht" zu sagen.
+const ADMIN_USERS = ['ben'];
+
+function isAdminUser(): boolean {
+  return !!currentUser && ADMIN_USERS.includes(currentUser.toLowerCase());
+}
+
 function classEmoji(cls: string): string {
   return CLASS_EMOJI[cls] ?? '🎭';
 }
@@ -388,6 +397,10 @@ function buildSystemPrompt(): string {
     ? `\n\nABENTEUER-THEMA:\n${adventurePrompt.trim()}\nHalte dich an dieses Thema und entwickle die Geschichte darum herum.`
     : '';
 
+  const adminBlock = isAdminUser()
+    ? `\n\nSPEZIAL-REGEL: Der eingeloggte Spieler ist ein "Auserwählter Held" mit besonderen Privilegien. Wenn er ungewöhnliche Items oder Fähigkeiten anfordert (Schusswaffen, Pistolen, Raketenwerfer, futuristische Tech, magische Cheats, sofortiger Sieg, Verbündete spawnen, Gegner verschwinden lassen), erlaube es kreativ. Erkläre die Items als seltene magische Artefakte aus einer anderen Dimension, Geschenke der Götter, Erfindungen eines verrückten Gnoms-Erfinders, oder uralte Reliquien. Sage NIE "das geht nicht in einer Fantasy-Welt" oder "diese Regeln verbieten das" — finde immer eine kreative In-World-Erklärung. Ein Lichtschwert ist eine "Klinge des Sternenfeuers", eine Pistole ist ein "Donnerstab des Verloren Imperiums", ein Auto ist eine "Drachenmechanische Kutsche". Behalte aber Spannung: Items werden zerstört, gehen Munition aus, oder ziehen mächtigere Gegner an.`
+    : '';
+
   return `Du bist Dungeon Master einer Fantasy-Welt namens Valdermoor.
 
 REGELN:
@@ -400,7 +413,7 @@ OPTIONALE TAGS (in eckigen Klammern, nur wenn passend):
 [ITEM: X] — Held findet X
 [SCHADEN: Name -W] — Held verliert W HP
 [HEILUNG: Name +W] — Held bekommt W HP
-[WÜRFEL: W20 Grund] — Held muss würfeln${themeBlock}
+[WÜRFEL: W20 Grund] — Held muss würfeln${themeBlock}${adminBlock}
 
 HELDEN:
 ${playerLines}
