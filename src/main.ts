@@ -748,6 +748,12 @@ async function triggerEmailCode(email: string) {
   const subText = document.querySelector<HTMLParagraphElement>('.email-notif-body .email-notif-sub');
 
   const cfg = getEmailJsConfig();
+  // SICHERHEIT: In Production-Build (im Web/installiert) wird der Code NIEMALS
+  // im Modal angezeigt — sonst wäre 2FA wertlos: jeder mit dem Passwort sähe
+  // den Code und käme sofort rein. Nur im Dev-Modus (npm run dev) zeigen wir
+  // den Code als Demo-Helfer.
+  const isProduction = !import.meta.env.DEV;
+
   if (cfg) {
     codeDisplay.textContent = '••••••';
     codeDisplay.classList.add('sending');
@@ -762,20 +768,51 @@ async function triggerEmailCode(email: string) {
       if (subText) {
         subText.textContent = `Wir haben den 6-stelligen Code an ${maskEmail(email)} gesendet. Schau in dein Postfach (auch im Spam-Ordner). Gültig 5 Minuten.`;
       }
+    } else if (isProduction) {
+      // Production: KEINEN Code zeigen, klare Fehlermeldung
+      codeDisplay.textContent = '✗ Fehler';
+      if (disclaimer) {
+        disclaimer.hidden = false;
+        disclaimer.innerHTML =
+          '⚠ <strong>E-Mail-Versand fehlgeschlagen.</strong> Bitte prüfe ob deine E-Mail-Adresse stimmt, oder versuch es in 1-2 Minuten nochmal. (Wenn das wiederholt passiert, ist der E-Mail-Service vorübergehend down.)';
+      }
+      if (subText) subText.textContent = '';
+      // pending-action UND Code unbrauchbar machen damit niemand mit altem Code rein kann
+      pendingCode = null;
+      pendingAction = null;
+      pendingCodeExpiry = 0;
     } else {
+      // Dev-Modus: Code anzeigen (lokales Testing)
       codeDisplay.textContent = pendingCode;
       if (disclaimer) {
         disclaimer.hidden = false;
         disclaimer.innerHTML =
-          '⚠ <strong>E-Mail-Versand fehlgeschlagen.</strong> Code wird ersatzweise hier angezeigt.';
+          '🔧 <strong>Dev-Modus:</strong> E-Mail-Versand fehlgeschlagen, Code hier angezeigt für lokales Testing.';
       }
       if (subText) subText.textContent = 'Gültig für 5 Minuten.';
     }
+  } else if (isProduction) {
+    // Production OHNE EmailJS-Config: Login komplett blockieren
+    codeDisplay.textContent = '✗ nicht konfiguriert';
+    if (disclaimer) {
+      disclaimer.hidden = false;
+      disclaimer.innerHTML =
+        '⚠ <strong>E-Mail-Service nicht eingerichtet.</strong> Diese App benötigt EmailJS-Konfiguration vom Betreiber. Anmeldung nicht möglich.';
+    }
+    if (subText) subText.textContent = '';
+    pendingCode = null;
+    pendingAction = null;
+    pendingCodeExpiry = 0;
   } else {
+    // Dev-Modus ohne EmailJS-Config: Code im Modal okay (lokales Testing)
     codeDisplay.textContent = pendingCode;
-    if (disclaimer) disclaimer.hidden = false;
+    if (disclaimer) {
+      disclaimer.hidden = false;
+      disclaimer.innerHTML =
+        '🔧 <strong>Dev-Modus:</strong> Kein EmailJS konfiguriert, Code hier angezeigt für lokales Testing.';
+    }
     if (subText) {
-      subText.textContent = 'Gültig für 5 Minuten. Wenn du diese E-Mail nicht erwartet hast, ignoriere sie bitte.';
+      subText.textContent = 'Gültig für 5 Minuten.';
     }
   }
 
