@@ -71,8 +71,21 @@ interface GameSave {
 // Constants
 // ────────────────────────────────────────────────────────────
 
-const API_URL = '/v1/chat/completions';
-const MODELS_URL = '/v1/models';
+const LOCAL_API_URL = '/v1/chat/completions';
+const LOCAL_MODELS_URL = '/v1/models';
+
+const POLLINATIONS_API_URL = 'https://text.pollinations.ai/openai/v1/chat/completions';
+const POLLINATIONS_MODEL = (import.meta.env.VITE_CLOUD_MODEL as string | undefined) || 'openai';
+
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
+const GROQ_MODEL = (import.meta.env.VITE_GROQ_MODEL as string | undefined) || 'llama-3.3-70b-versatile';
+
+type CloudBackend = 'pollinations' | 'groq';
+const CLOUD_BACKEND: CloudBackend = GROQ_API_KEY ? 'groq' : 'pollinations';
+const CLOUD_API_URL = CLOUD_BACKEND === 'groq' ? GROQ_API_URL : POLLINATIONS_API_URL;
+const CLOUD_MODEL = CLOUD_BACKEND === 'groq' ? GROQ_MODEL : POLLINATIONS_MODEL;
+const CLOUD_LABEL = CLOUD_BACKEND === 'groq' ? 'Groq' : 'Pollinations';
 const STAT_KEYS: StatKey[] = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
 const ACCOUNTS_KEY = 'valdermoor:accounts';
 const SESSION_KEY = 'valdermoor:session';
@@ -91,6 +104,25 @@ const KNOWN_CLASSES = [
   'Kleriker', 'Barde', 'Paladin', 'Druide', 'Mönch', 'Hexenmeister',
 ];
 
+const CLASS_EMOJI: Record<string, string> = {
+  'Krieger': '⚔️',
+  'Magier': '🧙',
+  'Zauberer': '✨',
+  'Dieb': '🗡️',
+  'Schurke': '🗡️',
+  'Waldläufer': '🏹',
+  'Kleriker': '✝️',
+  'Barde': '🎵',
+  'Paladin': '🛡️',
+  'Druide': '🌿',
+  'Mönch': '👊',
+  'Hexenmeister': '🔮',
+};
+
+function classEmoji(cls: string): string {
+  return CLASS_EMOJI[cls] ?? '🎭';
+}
+
 const ENGLISH_TO_GERMAN_CLASS: Record<string, string> = {
   fighter: 'Krieger', barbarian: 'Krieger', wizard: 'Magier',
   sorcerer: 'Zauberer', rogue: 'Dieb', thief: 'Dieb', ranger: 'Waldläufer',
@@ -101,6 +133,8 @@ const ENGLISH_TO_GERMAN_CLASS: Record<string, string> = {
 // ────────────────────────────────────────────────────────────
 // State
 // ────────────────────────────────────────────────────────────
+
+type LmProvider = 'local' | 'cloud' | 'unknown';
 
 let currentUser: string | null = null;
 let ageMode: AgeMode = 'jugend';
@@ -114,6 +148,7 @@ let currentAbortController: AbortController | null = null;
 let pendingAction: PendingAction | null = null;
 let pendingCode: string | null = null;
 let pendingCodeExpiry = 0;
+let lmProvider: LmProvider = 'unknown';
 
 // ────────────────────────────────────────────────────────────
 // DOM helpers
@@ -433,6 +468,10 @@ async function sendCodeViaEmailJs(
   code: string,
 ): Promise<boolean> {
   try {
+    const expiryDate = new Date(Date.now() + 5 * 60 * 1000);
+    const expiryTimeStr = expiryDate.toLocaleTimeString('de-CH', {
+      hour: '2-digit', minute: '2-digit',
+    });
     const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -441,11 +480,22 @@ async function sendCodeViaEmailJs(
         template_id: cfg.templateId,
         user_id: cfg.publicKey,
         template_params: {
+          // Empfänger-Adresse: alle gängigen Variablen-Namen
           to_email: toEmail,
           email: toEmail,
+          to: toEmail,
+          user_email: toEmail,
+          // Code: alle gängigen Variablen-Namen
           code,
-          app_name: 'Valdermoor',
+          passcode: code,
+          otp: code,
+          // Ablaufzeit: als Minuten und als Uhrzeit
           expiry_minutes: 5,
+          time: expiryTimeStr,
+          // App-Name: alle gängigen Variablen-Namen
+          app_name: 'Valdermoor',
+          company_name: 'Valdermoor',
+          from_name: 'Valdermoor',
         },
       }),
     });
@@ -566,7 +616,15 @@ function setupRegisterForm() {
 
     const accounts = loadAccounts();
     if (accounts[user.toLowerCase()]) {
-      errEl.textContent = 'Benutzername existiert schon.';
+      errEl.textContent = 'Benutzername existiert schon — wähl einen anderen.';
+      return;
+    }
+    const emailLower = email.toLowerCase();
+    const emailTaken = Object.values(accounts).some(
+      (a) => a.email.toLowerCase() === emailLower,
+    );
+    if (emailTaken) {
+      errEl.textContent = 'Diese E-Mail ist schon registriert. Geh auf "Anmelden".';
       return;
     }
 
@@ -582,6 +640,9 @@ function setupEmailCodeModal() {
   const cancelBtn = $<HTMLButtonElement>('#email-code-cancel');
 
   cancelBtn.addEventListener('click', () => {
+    if (pendingAction && !confirm('Wirklich abbrechen? Der Code wird ungültig.')) {
+      return;
+    }
     pendingAction = null;
     pendingCode = null;
     $<HTMLDivElement>('#email-code-modal').hidden = true;
@@ -952,7 +1013,8 @@ function resumeGame(save: GameSave) {
   renderPlayerSelector();
   updateUserChip();
   syncAgeModeSelect();
-  setStatus('Fortgesetzt', 'ok');
+  setStatus('Fortgesetzt — DM wird geprüft…', 'busy');
+  void checkLmStudioStatus();
 }
 
 function syncAgeModeSelect() {
@@ -1066,7 +1128,9 @@ function addPlayerBubble(speaker: string, text: string, color: string): HTMLDivE
   wrap.style.borderColor = color;
   const label = document.createElement('div');
   label.className = 'msg-label msg-label-player';
-  label.textContent = '⚔️ ' + speaker;
+  const speakerPlayer = players.find((p) => p.name === speaker);
+  const emoji = speakerPlayer ? classEmoji(speakerPlayer.class) : '⚔️';
+  label.textContent = `${emoji} ${speaker}`;
   label.style.color = color;
   const body = document.createElement('div');
   body.className = 'msg-body';
@@ -1144,7 +1208,10 @@ let knownModelId: string | null = null;
 
 async function pingLmStudio(): Promise<LmStatus> {
   try {
-    const res = await fetch(MODELS_URL, { method: 'GET' });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1500);
+    const res = await fetch(LOCAL_MODELS_URL, { method: 'GET', signal: ctrl.signal });
+    clearTimeout(timer);
     if (!res.ok) return { ok: false, reason: 'http-error', detail: `HTTP ${res.status}` };
     const json = (await res.json()) as { data?: Array<{ id: string }> };
     const ids = (json.data ?? []).map((m) => m.id).filter(Boolean);
@@ -1156,28 +1223,59 @@ async function pingLmStudio(): Promise<LmStatus> {
   }
 }
 
+async function pingCloud(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    if (CLOUD_BACKEND === 'groq') {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      return res.ok;
+    }
+    const res = await fetch('https://text.pollinations.ai/models', {
+      method: 'GET',
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function checkLmStudioStatus() {
-  const status = await pingLmStudio();
-  if (status.ok) {
-    setStatus(`Bereit (${status.modelCount} Modell${(status.modelCount ?? 0) > 1 ? 'e' : ''})`, 'ok');
+  if (import.meta.env.DEV) {
+    const status = await pingLmStudio();
+    if (status.ok) {
+      lmProvider = 'local';
+      setStatus(`Lokal · ${status.modelId ?? 'Modell'}`, 'ok');
+      return;
+    }
+  }
+
+  const cloudOk = await pingCloud();
+  if (cloudOk) {
+    lmProvider = 'cloud';
+    setStatus(`Cloud · ${CLOUD_LABEL} (${CLOUD_MODEL})`, 'ok');
     return;
   }
-  if (status.reason === 'unreachable') {
+
+  lmProvider = 'unknown';
+  if (import.meta.env.DEV) {
     addErrorBubble(
-      '⚠ LM Studio läuft nicht. Starte LM Studio → Tab "Local Server" → "Start Server". ' +
-      'Sieh in SETUP.md für Details.',
+      '⚠ Kein DM erreichbar. Entweder LM Studio starten (Tab "Local Server" → "Start Server") ' +
+      'oder Internet-Verbindung prüfen (für Cloud-Modus via Pollinations.ai).',
     );
-    setStatus('LM Studio offline', 'error');
-  } else if (status.reason === 'no-model') {
-    addErrorBubble(
-      '⚠ LM Studio läuft, aber kein Modell ist geladen. ' +
-      'Geh in den "Chat"-Tab und lade ein Modell (z.B. SmolLM2 360M oder Phi-3.5 Mini).',
-    );
-    setStatus('Kein Modell', 'error');
   } else {
-    addErrorBubble(`⚠ LM Studio antwortet mit Fehler: ${status.detail ?? 'unbekannt'}`);
-    setStatus('Server-Fehler', 'error');
+    addErrorBubble(
+      '⚠ Cloud-DM nicht erreichbar. Prüfe deine Internet-Verbindung und versuche es gleich nochmal.',
+    );
   }
+  setStatus('DM offline', 'error');
 }
 
 const HEAD_KEEP = 4;
@@ -1233,50 +1331,85 @@ async function sendToLMStudio(userText: string, speaker: string) {
   currentAbortController = new AbortController();
   const signal = currentAbortController.signal;
 
+  if (lmProvider === 'unknown') {
+    await checkLmStudioStatus();
+  }
+  const useCloud = lmProvider === 'cloud';
+  const apiUrl = useCloud ? CLOUD_API_URL : LOCAL_API_URL;
+  const modelId = useCloud ? CLOUD_MODEL : (knownModelId ?? 'local-model');
+  const tiny = !useCloud && isTinyModel();
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (useCloud && CLOUD_BACKEND === 'groq' && GROQ_API_KEY) {
+    headers.Authorization = `Bearer ${GROQ_API_KEY}`;
+  }
+
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
-        model: knownModelId ?? 'local-model',
+        model: modelId,
         messages: trimHistory().map(({ role, content }) => ({ role, content })),
         stream: true,
-        temperature: isTinyModel() ? 0.7 : 0.75,
-        max_tokens: isTinyModel() ? 150 : 300,
-        presence_penalty: isTinyModel() ? 0.8 : 0.6,
-        frequency_penalty: isTinyModel() ? 0.7 : 0.3,
+        temperature: tiny ? 0.7 : 0.8,
+        max_tokens: tiny ? 150 : useCloud ? 500 : 300,
+        presence_penalty: tiny ? 0.8 : 0.6,
+        frequency_penalty: tiny ? 0.7 : 0.3,
       }),
       signal,
     });
 
     if (!response.ok || !response.body) {
-      throw new Error(`HTTP ${response.status}`);
+      let detail = '';
+      try {
+        const text = await response.text();
+        detail = text.slice(0, 200);
+      } catch { /* ignore */ }
+      const err = new Error(`HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
+      (err as Error & { status?: number }).status = response.status;
+      throw err;
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const data = trimmed.slice(5).trim();
-        if (data === '[DONE]') continue;
-        try {
-          const chunk = JSON.parse(data);
-          const token: string = chunk.choices?.[0]?.delta?.content ?? '';
-          if (token) {
-            fullText += token;
-            dmBody.textContent = fullText;
-            $<HTMLDivElement>('#messages').scrollTop =
-              $<HTMLDivElement>('#messages').scrollHeight;
-          }
-        } catch { /* ignore */ }
+    const contentType = response.headers.get('content-type') ?? '';
+    const isSse = contentType.includes('event-stream') || contentType.includes('text/plain');
+
+    if (!isSse) {
+      const json = await response.json().catch(() => null) as
+        | { choices?: Array<{ message?: { content?: string }; text?: string }> }
+        | null;
+      const text = json?.choices?.[0]?.message?.content ?? json?.choices?.[0]?.text ?? '';
+      if (text) {
+        fullText = text;
+        dmBody.textContent = fullText;
+        $<HTMLDivElement>('#messages').scrollTop = $<HTMLDivElement>('#messages').scrollHeight;
+      }
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const data = trimmed.slice(5).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(data);
+            const token: string = chunk.choices?.[0]?.delta?.content ?? '';
+            if (token) {
+              fullText += token;
+              dmBody.textContent = fullText;
+              $<HTMLDivElement>('#messages').scrollTop =
+                $<HTMLDivElement>('#messages').scrollHeight;
+            }
+          } catch { /* ignore */ }
+        }
       }
     }
     if (!fullText.trim()) {
@@ -1327,17 +1460,53 @@ async function sendToLMStudio(userText: string, speaker: string) {
     const retryUserText = lastMsg?.content ?? userText;
     const retrySpeaker = lastMsg?.speaker ?? speaker;
 
-    const status = await pingLmStudio();
     let errMsg: string;
-    if (status.reason === 'unreachable') {
-      errMsg = '⚠ LM Studio nicht erreichbar. Server starten? (Tab "Local Server" → "Start Server")';
-      setStatus('LM Studio offline', 'error');
-    } else if (status.reason === 'no-model') {
-      errMsg = '⚠ LM Studio läuft, aber kein Modell geladen. Lade ein Modell im Chat-Tab.';
-      setStatus('Kein Modell', 'error');
+    const httpStatus = (err as Error & { status?: number })?.status;
+    if (lmProvider === 'cloud') {
+      if (httpStatus === 401 || httpStatus === 403) {
+        errMsg = `⚠ ${CLOUD_LABEL} lehnt den API-Key ab (HTTP ${httpStatus}). VITE_GROQ_API_KEY in .env prüfen.`;
+        setStatus('Cloud-Auth-Fehler', 'error');
+      } else if (httpStatus === 429) {
+        errMsg = `⚠ ${CLOUD_LABEL} meldet "Rate Limit". Kurz warten (~10s) und nochmal versuchen.`;
+        setStatus('Cloud rate-limited', 'error');
+      } else if (httpStatus && httpStatus >= 500) {
+        errMsg = `⚠ ${CLOUD_LABEL} hat ein Server-Problem (HTTP ${httpStatus}). In ein paar Sekunden nochmal probieren.`;
+        setStatus('Cloud-Server-Fehler', 'error');
+      } else if (httpStatus === 400 || httpStatus === 404) {
+        const hint = CLOUD_BACKEND === 'groq'
+          ? 'Anderes Modell in .env (z.B. llama-3.1-8b-instant, mixtral-8x7b-32768).'
+          : 'Anderes Modell in .env probieren (openai · openai-large · mistral · llama).';
+        errMsg = `⚠ Modell "${CLOUD_MODEL}" wird nicht akzeptiert (HTTP ${httpStatus}). ${hint}`;
+        setStatus('Cloud-Modell-Fehler', 'error');
+      } else {
+        const cloudOk = await pingCloud();
+        if (!cloudOk) {
+          errMsg = '⚠ Cloud-DM (Pollinations) nicht erreichbar. Internet-Verbindung prüfen.';
+          setStatus('Cloud offline', 'error');
+        } else {
+          errMsg = `⚠ Cloud-DM Fehler: ${(err as Error)?.message ?? 'unbekannt'}. Versuch es nochmal.`;
+          setStatus('Cloud-Fehler', 'error');
+        }
+      }
     } else {
-      errMsg = `⚠ Verbindungsfehler: ${(err as Error)?.message ?? 'unbekannt'}`;
-      setStatus('Fehler', 'error');
+      const status = await pingLmStudio();
+      if (status.reason === 'unreachable') {
+        const cloudOk = await pingCloud();
+        if (cloudOk) {
+          lmProvider = 'cloud';
+          errMsg = '⚠ LM Studio offline — wechsle zu Cloud-DM (Pollinations). Klick "Nochmal versuchen".';
+          setStatus(`Cloud · ${CLOUD_LABEL} (${CLOUD_MODEL})`, 'ok');
+        } else {
+          errMsg = '⚠ Weder LM Studio noch Cloud erreichbar. LM Studio starten oder Internet prüfen.';
+          setStatus('DM offline', 'error');
+        }
+      } else if (status.reason === 'no-model') {
+        errMsg = '⚠ LM Studio läuft, aber kein Modell geladen. Lade ein Modell im Chat-Tab.';
+        setStatus('Kein Modell', 'error');
+      } else {
+        errMsg = `⚠ Verbindungsfehler: ${(err as Error)?.message ?? 'unbekannt'}`;
+        setStatus('Fehler', 'error');
+      }
     }
     addRetryBubble(errMsg, () => {
       const stripped = retrySpeaker !== 'Erzähler' && retryUserText.startsWith(retrySpeaker + ':')
@@ -1664,7 +1833,7 @@ function renderPlayersSidebar() {
     li.innerHTML = `
       <div class="player-card-head">
         <span class="player-card-name">${escapeHtml(p.name)}</span>
-        <span class="player-card-class">${escapeHtml(p.class)}</span>
+        <span class="player-card-class">${classEmoji(p.class)} ${escapeHtml(p.class)}</span>
       </div>
       <div class="hp-row"><span>${p.hp}</span> / <span>${p.maxHp}</span> HP</div>
       <div class="hp-bar-outer"><div class="hp-bar-inner" style="width: ${Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100))}%"></div></div>
@@ -1884,18 +2053,25 @@ function init() {
     saveGame();
   });
 
+  window.addEventListener('online', () => {
+    if (lmProvider !== 'local') {
+      void checkLmStudioStatus();
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    if (lmProvider === 'cloud') {
+      lmProvider = 'unknown';
+      setStatus('Offline — keine Internetverbindung', 'error');
+    }
+  });
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const help = document.getElementById('help-modal') as HTMLDivElement | null;
       if (help && !help.hidden) { help.hidden = true; e.preventDefault(); return; }
-      const emailModal = document.getElementById('email-code-modal') as HTMLDivElement | null;
-      if (emailModal && !emailModal.hidden) {
-        emailModal.hidden = true;
-        pendingAction = null;
-        pendingCode = null;
-        e.preventDefault();
-        return;
-      }
+      // Email-Code-Modal absichtlich NICHT bei ESC schließen — User soll
+      // bewusst auf "Abbrechen" klicken müssen, sonst geht der Code verloren.
     }
     if (e.key === '?' && !isTypingTarget(e.target)) {
       const help = document.getElementById('help-modal') as HTMLDivElement | null;
@@ -1914,7 +2090,6 @@ function init() {
     const save = loadGame();
     if (save) {
       resumeGame(save);
-      void checkLmStudioStatus();
     } else {
       showCharModal();
     }

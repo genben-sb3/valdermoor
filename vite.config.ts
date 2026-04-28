@@ -70,38 +70,41 @@ function lmAutoStartPlugin(): Plugin {
     name: 'lm-autostart',
     apply: 'serve',
     async configureServer() {
+      if (process.env.SKIP_LM_AUTOSTART === '1') {
+        console.log('\n  ⏭  LM-Auto-Start übersprungen (SKIP_LM_AUTOSTART=1) — App läuft via Cloud-DM.\n');
+        return;
+      }
+
       if (await isLmRunning()) {
         console.log('\n  ✓ LM-Server läuft bereits auf Port 1234\n');
         return;
       }
-      console.log('\n  ⏳ LM-Server nicht erreichbar — versuche zu starten…');
+      console.log('\n  ⏳ LM-Server nicht erreichbar — versuche zu starten (max. 10s)…');
 
       // Strategie 1: lms CLI (funktioniert nur wenn LM Studio App läuft)
       if (tryLmsServerStart()) {
         console.log('  → "lms server start" abgesetzt');
-        if (await waitForLm(8_000, 'lms CLI')) return;
+        if (await waitForLm(5_000, 'lms CLI')) return;
       }
 
-      // Strategie 2: LM Studio App selbst starten (öffnet GUI), dann nochmal lms
-      if (spawnDetached(LM_STUDIO_EXE, [])) {
-        console.log('  → LM Studio.exe gestartet — warte bis App hochkommt…');
-        await new Promise((r) => setTimeout(r, 5_000));
-        tryLmsServerStart();
-        if (await waitForLm(25_000, 'LM Studio App + lms')) return;
-      }
-
-      // Strategie 3: llama-server.exe Bat-Datei (alter Setup-Pfad)
+      // Strategie 2: llama-server.exe Bat-Datei (alter Setup-Pfad)
       if (existsSync(LLAMA_BAT)) {
         console.log(`  → ${LLAMA_BAT} starten…`);
         spawn('cmd', ['/c', 'start', '""', LLAMA_BAT], {
           detached: true,
           stdio: 'ignore',
         }).unref();
-        if (await waitForLm(30_000, 'llama-server')) return;
+        if (await waitForLm(5_000, 'llama-server')) return;
       }
 
-      console.log('  ⚠ Konnte LM-Server nicht automatisch hochfahren.');
-      console.log('     → LM Studio manuell öffnen, Modell laden, Server starten.\n');
+      // Strategie 3: LM Studio App selbst starten (öffnet GUI) — nicht blockierend
+      if (existsSync(LM_STUDIO_EXE)) {
+        spawnDetached(LM_STUDIO_EXE, []);
+        console.log('  → LM Studio.exe im Hintergrund gestartet (kein Warten).');
+      }
+
+      console.log('  ℹ Lokaler LM-Server nicht aktiv — App nutzt automatisch Cloud-DM (Pollinations.ai).');
+      console.log('     Tipp: für reinen Cloud-Modus  SKIP_LM_AUTOSTART=1 npm run dev\n');
     },
   };
 }

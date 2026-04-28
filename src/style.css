@@ -676,7 +676,49 @@ button { font-family: var(--font-body); cursor: pointer; }
     0 0 0 1px rgba(201, 168, 76, 0.15),
     0 20px 80px rgba(0, 0, 0, 0.9);
   padding: 32px 36px;
-  width: min(460px, 100%);
+  width: min(520px, 100%);
+  overflow: hidden;
+}
+.login-hero {
+  display: block;
+  width: calc(100% + 72px);
+  height: 200px;
+  object-fit: cover;
+  margin: -32px -36px 24px;
+  border-bottom: 2px solid var(--panel-border);
+  background:
+    linear-gradient(135deg, rgba(0,0,0,0.4), rgba(0,0,0,0.2)),
+    linear-gradient(180deg, #2a1f15 0%, #1a1410 60%, #0d0d0d 100%);
+  filter: saturate(1.05) contrast(1.05);
+  animation: hero-fade-in 0.8s ease-out;
+  min-height: 200px;
+  color: transparent;
+  font-size: 0;
+  position: relative;
+}
+.login-hero::before {
+  content: "⚔ Valdermoor wird geladen…";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-family: var(--font-heading);
+  font-size: 14px;
+  letter-spacing: 0.15em;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.login-hero[src]:not([src=""]) {
+  color: inherit;
+}
+.login-hero.login-hero-failed {
+  display: none;
+}
+@keyframes hero-fade-in {
+  from { opacity: 0; transform: scale(1.02); }
+  to   { opacity: 1; transform: scale(1); }
 }
 .login-box h1 {
   text-align: center;

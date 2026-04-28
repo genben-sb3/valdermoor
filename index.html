@@ -16,6 +16,9 @@
     <!-- LOGIN-SCREEN (vor allem anderen) -->
     <div id="login-screen" class="screen-overlay">
       <div class="login-box">
+        <img class="login-hero" alt="Valdermoor"
+             src="https://image.pollinations.ai/prompt/Epic%20dark%20fantasy%20castle%20on%20misty%20moor%2C%20dragon%20in%20stormy%20sky%2C%20torches%2C%20cinematic%20lighting?width=1040&height=400&model=flux&seed=42&nologo=true"
+             onerror="this.classList.add('login-hero-failed')" />
         <h1>⚔️ Valdermoor</h1>
         <p class="login-sub">Dein Abenteuer beginnt mit einer sicheren Anmeldung.</p>
 
@@ -57,7 +60,7 @@
         </form>
 
         <p class="login-footer">
-          Lokal im Browser. Passwörter werden gehasht gespeichert (SHA-256 + Salt).
+          Lokal im Browser. Passwörter werden gehasht gespeichert (PBKDF2 + Salt).
         </p>
       </div>
     </div>
@@ -138,6 +141,13 @@
           <li>Wird automatisch gespeichert (kleines "💾 Gespeichert" unten rechts).</li>
           <li>Tab schließen + zurückkommen → Spiel geht weiter wo du aufgehört hast.</li>
           <li><strong>🆕 Neue Runde:</strong> löscht den Spielstand und startet neu.</li>
+        </ul>
+
+        <h3>DM-Modus (oben rechts neben den Steuerungen)</h3>
+        <ul>
+          <li><code>Cloud · Pollinations (…)</code> → der DM antwortet via Internet-Dienst (gratis, anonym, kein Account nötig).</li>
+          <li><code>Lokal · &lt;modell&gt;</code> → LM Studio läuft auf deinem Rechner — alles offline, deine Daten bleiben lokal.</li>
+          <li><code>DM offline</code> → kein Internet UND kein lokales LM Studio. → Internet checken oder LM Studio starten.</li>
         </ul>
 
         <div class="modal-actions">
