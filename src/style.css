@@ -254,6 +254,27 @@ button { font-family: var(--font-body); cursor: pointer; }
   text-align: center;
 }
 
+/* Erzähler-Bubble: zentriert, mystisch, italic */
+.msg-narrator {
+  align-self: center;
+  background: linear-gradient(180deg, #1f1810 0%, #14110d 100%);
+  border-color: var(--gold);
+  border-style: dashed;
+  border-width: 1px;
+  border-left-width: 4px;
+  border-right-width: 4px;
+  max-width: 88%;
+  font-style: italic;
+}
+.msg-label-narrator {
+  color: var(--gold-bright);
+  text-align: center;
+}
+.msg-narrator .msg-body {
+  color: var(--gold);
+  text-align: center;
+}
+
 #input-form {
   border-top: 1px solid var(--panel-border);
   background: #0f0c09;

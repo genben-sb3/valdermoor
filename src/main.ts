@@ -615,10 +615,22 @@ Setze passende Tags AM ENDE deiner Antwort (nicht mittendrin):
 [HEILUNG: <Heldname> +<HP>]  — Held bekommt HP zurück
 [WÜRFEL: W20 <Grund>]        — Spieler muss würfeln, du wartest auf Ergebnis (W4/W6/W8/W10/W12/W20/W100 erlaubt)
 
+ABSOLUT VERBOTEN:
+• KEINE Meta-Tags wie "[KEINE Tags]", "[Keine Aktion]", "[—]", "[]" — wenn nichts passt: GAR NICHTS schreiben.
+• KEIN Selbstkommentar wie "Ich werde keine Tags setzen" oder "Hier sind keine Tags nötig".
+• Tags nur dann schreiben, wenn die Geschichte sie tatsächlich auslöst.
+
 WICHTIG zur Tag-Disziplin:
 • Verteile Schaden NUR wenn er auch erzählerisch passiert.
 • Frag nach einem Wurf wenn die Aktion: kämpferisch, heimlich, riskant, sozial-überzeugend, magisch oder Glücks-bedingt ist.
 • Hohe Würfel-Ergebnisse (16-20) = klarer Erfolg + Bonus. Mittlere (10-15) = Erfolg mit Komplikation. Niedrige (1-9) = Fehlschlag mit Konsequenz. Eine 1 ist ein DESASTRÖSER Patzer.
+
+═══ ERZÄHLER-EINGABEN ═══
+Wenn eine Spieler-Nachricht mit "[ERZÄHLER]:" beginnt, ist das KEINE Helden-Aktion. Es ist eine Anweisung vom menschlichen Spielleiter, der dir hilft die Geschichte zu lenken. Beispiele:
+• "[ERZÄHLER]: Ein neuer NPC erscheint, ein zwielichtiger Magier mit Augenklappe."
+• "[ERZÄHLER]: Springe zur nächsten Szene."
+• "[ERZÄHLER]: Mache den Kampf schwerer."
+Behandle sie als Welt-Anpassungen, NIE als Helden-Aktion. Setze die Anweisung kreativ um, ohne den Erzähler zu erwähnen oder das Vierte-Wand zu brechen.
 
 ═══ TONALITÄT ═══
 ${toneLine}
@@ -1240,7 +1252,9 @@ function resumeGame(save: GameSave) {
   renderMessagesArea(true);
 
   for (const m of save.messages) {
-    if (m.role === 'user' && m.speaker && m.speaker !== 'Erzähler') {
+    if (m.role === 'user' && m.speaker === 'Erzähler' && m.content.startsWith('[ERZÄHLER]:')) {
+      addNarratorBubble(m.content.replace(/^\[ERZÄHLER\]:\s*/, ''));
+    } else if (m.role === 'user' && m.speaker && m.speaker !== 'Erzähler') {
       const p = players.find((x) => x.name === m.speaker);
       const prefix = m.speaker + ':';
       const text = m.content.startsWith(prefix)
@@ -1416,6 +1430,23 @@ function addErrorBubble(text: string) {
   el.scrollTop = el.scrollHeight;
 }
 
+function addNarratorBubble(text: string): HTMLDivElement {
+  const el = $<HTMLDivElement>('#messages');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg msg-narrator';
+  const label = document.createElement('div');
+  label.className = 'msg-label msg-label-narrator';
+  label.textContent = '🎭 Erzähler';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.textContent = text;
+  wrap.appendChild(label);
+  wrap.appendChild(body);
+  el.appendChild(wrap);
+  el.scrollTop = el.scrollHeight;
+  return body;
+}
+
 function addRetryBubble(text: string, onRetry: () => void) {
   const el = $<HTMLDivElement>('#messages');
   const wrap = document.createElement('div');
@@ -1584,7 +1615,13 @@ async function sendToLMStudio(userText: string, speaker: string) {
       : `${speaker}: ${userText}`;
   messages.push({ role: 'user', content: decorated, speaker });
 
-  if (speaker !== 'Erzähler') {
+  if (speaker === 'Erzähler') {
+    // Wenn die Erzähler-Eingabe vom User kam (manuell, mit [ERZÄHLER]: prefix),
+    // sichtbar machen. Wenn intern (z.B. Eröffnungs-Prompt), still senden.
+    if (userText.startsWith('[ERZÄHLER]:')) {
+      addNarratorBubble(userText.replace(/^\[ERZÄHLER\]:\s*/, ''));
+    }
+  } else {
     const p = players.find((x) => x.name === speaker);
     addPlayerBubble(speaker, userText, p?.color ?? '#888');
   }
@@ -2157,10 +2194,15 @@ function renderPlayerSelector() {
   players.forEach((p) => {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.textContent = p.name;
+    opt.textContent = `${classEmoji(p.class)} ${p.name}`;
     if (p.id === activePlayerId) opt.selected = true;
     sel.appendChild(opt);
   });
+  // Erzähler-Option: User kann selbst die Story lenken (außerhalb der Helden-Rolle)
+  const narrator = document.createElement('option');
+  narrator.value = '__narrator__';
+  narrator.textContent = '🎭 Erzähler (Story lenken)';
+  sel.appendChild(narrator);
 }
 
 function escapeHtml(s: string): string {
@@ -2183,8 +2225,14 @@ function setupInputForm() {
   const sendBtn = $<HTMLButtonElement>('#send-btn');
 
   sel.addEventListener('change', () => {
-    activePlayerId = sel.value;
-    renderPlayersSidebar();
+    if (sel.value === '__narrator__') {
+      // Narrator-Modus: keinen activePlayerId ändern, nur Placeholder anpassen
+      input.placeholder = 'Story-Anweisung an den DM (z.B. "Ein Magier erscheint")';
+    } else {
+      activePlayerId = sel.value;
+      input.placeholder = 'Was tust du? (Enter = Senden, Shift+Enter = neue Zeile)';
+      renderPlayersSidebar();
+    }
   });
 
   sendBtn.addEventListener('click', (e) => {
@@ -2199,6 +2247,13 @@ function setupInputForm() {
     if (isGenerating) return;
     const text = input.value.trim();
     if (!text) return;
+    if (sel.value === '__narrator__') {
+      // Story-Anweisung — wird mit [ERZÄHLER]: prefix gesendet damit DM weiß
+      // dass es keine Helden-Aktion ist
+      input.value = '';
+      sendToLMStudio(`[ERZÄHLER]: ${text}`, 'Erzähler');
+      return;
+    }
     const p = players.find((x) => x.id === activePlayerId);
     if (!p) return;
     input.value = '';
