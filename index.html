@@ -195,6 +195,9 @@
               </select>
             </label>
             <button type="button" id="voice-toggle-btn" class="text-btn" title="DM-Stimme an/aus">🔇 Stimme aus</button>
+            <select id="voice-picker" class="voice-picker" title="Stimme wählen" hidden>
+              <!-- Optionen werden zur Laufzeit gefüllt -->
+            </select>
             <button type="button" id="help-btn" class="text-btn" title="Hilfe & Tipps">❓ Hilfe</button>
             <button type="button" id="export-btn" class="text-btn" title="Abenteuer als Textdatei herunterladen">⬇ Export</button>
             <button type="button" id="new-run-btn" class="text-btn" title="Neue Runde starten">🆕 Neue Runde</button>
@@ -215,6 +218,7 @@
               placeholder="Was tust du? (Enter = Senden, Shift+Enter = neue Zeile)"
               autocomplete="off"
             ></textarea>
+            <button type="button" id="mic-btn" hidden title="Sprich, statt zu tippen (Deutsch)">🎤</button>
             <button type="submit" id="send-btn">Senden</button>
           </div>
         </form>

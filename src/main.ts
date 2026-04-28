@@ -176,35 +176,58 @@ function setCloudModel(backend: CloudBackend, model: string) {
 // ────────────────────────────────────────────────────────────
 
 const VOICE_PREF_KEY = 'valdermoor:voiceEnabled';
+const VOICE_NAME_KEY = 'valdermoor:voiceName';
 let voiceEnabled = false;
+let selectedVoice = 'onyx'; // Default: tiefe männliche Stimme, passt zu DM
 try {
   voiceEnabled = localStorage.getItem(VOICE_PREF_KEY) === '1';
+  selectedVoice = localStorage.getItem(VOICE_NAME_KEY) || 'onyx';
 } catch { /* ignore */ }
+
+// 6 Pollinations OpenAI-Stimmen — alle gratis, keine Account nötig
+const VOICE_OPTIONS = [
+  { id: 'onyx',    label: '🎩 Onyx — tief & dramatisch (DM-Default)' },
+  { id: 'echo',    label: '🌊 Echo — warm & ruhig' },
+  { id: 'fable',   label: '📖 Fable — britisch, erzählerisch' },
+  { id: 'alloy',   label: '⚖ Alloy — neutral, klar' },
+  { id: 'nova',    label: '✨ Nova — weiblich, energisch' },
+  { id: 'shimmer', label: '💫 Shimmer — weiblich, sanft' },
+];
+
+let currentAudio: HTMLAudioElement | null = null;
 
 function speak(text: string) {
   if (!voiceEnabled || !text.trim()) return;
-  if (!('speechSynthesis' in window)) return;
-  // Vorherige Sprache stoppen falls neue kommt
-  window.speechSynthesis.cancel();
+  // Vorherige Audio stoppen
+  stopSpeaking();
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'de-DE';
-  utterance.rate = 1.0;
-  utterance.pitch = 0.9;  // etwas tiefer für DM-Feel
+  // Pollinations OpenAI-Audio API: GET /{prompt}?model=openai-audio&voice=onyx
+  // Liefert direkt eine MP3 zurück. Limit ~3000 Zeichen pro Request.
+  const cleanText = text.replace(/[\[\]]/g, '').slice(0, 3000);
+  const url = `https://text.pollinations.ai/${encodeURIComponent(cleanText)}?model=openai-audio&voice=${selectedVoice}`;
 
-  // Bevorzuge eine deutsche, männliche, "tiefe" Stimme falls verfügbar
-  const voices = window.speechSynthesis.getVoices();
-  const germanVoices = voices.filter((v) => /^de/i.test(v.lang));
-  const preferred =
-    germanVoices.find((v) => /(male|markus|stefan|hans|conrad|jonas)/i.test(v.name)) ||
-    germanVoices.find((v) => v.localService) ||
-    germanVoices[0];
-  if (preferred) utterance.voice = preferred;
-
-  window.speechSynthesis.speak(utterance);
+  const audio = new Audio(url);
+  audio.onerror = () => {
+    console.warn('Pollinations TTS fehlgeschlagen, fallback auf Browser-Stimme');
+    // Fallback auf Browser-TTS
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'de-DE';
+      utterance.rate = 1.0;
+      utterance.pitch = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+  currentAudio = audio;
+  void audio.play().catch(() => { /* User-Gesture-Required ggf. */ });
 }
 
 function stopSpeaking() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.src = '';
+    currentAudio = null;
+  }
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
@@ -212,14 +235,33 @@ function stopSpeaking() {
 
 function setupVoiceToggle() {
   const btn = document.getElementById('voice-toggle-btn') as HTMLButtonElement | null;
+  const picker = document.getElementById('voice-picker') as HTMLSelectElement | null;
   if (!btn) return;
-  if (!('speechSynthesis' in window)) {
-    btn.style.display = 'none';
-    return;
+
+  // Voice-Picker mit den 6 Pollinations-Stimmen füllen
+  if (picker) {
+    picker.innerHTML = '';
+    for (const v of VOICE_OPTIONS) {
+      const o = document.createElement('option');
+      o.value = v.id;
+      o.textContent = v.label;
+      if (v.id === selectedVoice) o.selected = true;
+      picker.appendChild(o);
+    }
+    picker.addEventListener('change', () => {
+      selectedVoice = picker.value;
+      try { localStorage.setItem(VOICE_NAME_KEY, selectedVoice); } catch { /* */ }
+      // Test-Phrase wenn Stimme geändert + Voice an
+      if (voiceEnabled) {
+        speak('Ich bin dein neuer Dungeon Master.');
+      }
+    });
   }
+
   const updateUI = () => {
     btn.textContent = voiceEnabled ? '🔊 Stimme an' : '🔇 Stimme aus';
     btn.title = voiceEnabled ? 'DM liest Antworten vor — klick zum Stummschalten' : 'Klick um den DM vorlesen zu lassen';
+    if (picker) picker.hidden = !voiceEnabled;
   };
   updateUI();
   btn.addEventListener('click', () => {
@@ -228,11 +270,6 @@ function setupVoiceToggle() {
     if (!voiceEnabled) stopSpeaking();
     updateUI();
   });
-
-  // Stimmen-Liste asynchron laden (Chrome quirk)
-  if ('onvoiceschanged' in window.speechSynthesis) {
-    window.speechSynthesis.onvoiceschanged = () => { /* trigger voice list */ };
-  }
 }
 
 function setupModelSwitcher() {

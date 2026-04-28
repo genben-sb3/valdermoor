@@ -296,6 +296,17 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: var(--gold-bright);
   font-family: var(--font-body);
 }
+.voice-picker {
+  background: #1a1510;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--gold-bright);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+}
+.voice-picker:hover { border-color: var(--gold); }
 #logout-btn {
   margin-left: auto;
   background: linear-gradient(180deg, #2a1410, #1a0c08);
