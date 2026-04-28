@@ -232,6 +232,49 @@
         .cta { padding: 18px 14px; }
         .cta-icon { font-size: 44px; }
       }
+
+      /* Big Install-Button */
+      .big-install {
+        display: block;
+        width: 100%;
+        max-width: 400px;
+        margin: 32px auto 0;
+        padding: 18px 28px;
+        background: linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
+        color: #1a1510;
+        border: none;
+        border-radius: 14px;
+        font-family: var(--font-heading);
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+        box-shadow: 0 6px 24px rgba(201, 168, 76, 0.4), 0 0 0 1px rgba(0,0,0,0.3);
+        transition: all 0.2s;
+        animation: install-glow 2.4s ease-in-out infinite;
+      }
+      .big-install:hover {
+        transform: translateY(-3px) scale(1.03);
+        box-shadow: 0 10px 32px rgba(233, 198, 107, 0.6), 0 0 0 1px rgba(0,0,0,0.3);
+      }
+      .big-install:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        animation: none;
+      }
+      @keyframes install-glow {
+        0%, 100% { box-shadow: 0 6px 24px rgba(201, 168, 76, 0.4), 0 0 0 1px rgba(0,0,0,0.3); }
+        50%      { box-shadow: 0 6px 36px rgba(233, 198, 107, 0.7), 0 0 0 1px rgba(0,0,0,0.3); }
+      }
+      .install-status {
+        text-align: center;
+        margin-top: 12px;
+        color: var(--text-dim);
+        font-size: 14px;
+        font-style: italic;
+      }
+      .install-status.success { color: var(--gold-bright); font-style: normal; font-weight: 600; }
+      .install-status.error { color: #ff8080; }
     </style>
   </head>
   <body>
@@ -266,6 +309,13 @@
           <p>Eigenes Fenster, kein Browser-Tab — auf Windows, Mac, Linux</p>
         </a>
       </div>
+
+      <button id="big-install-btn" class="big-install" disabled>
+        ⏳ Install-Button wird vorbereitet…
+      </button>
+      <p id="install-status" class="install-status">
+        Wenn dein Browser PWAs unterstützt (Chrome, Edge, Brave, Samsung Internet), erscheint hier ein direkter Installier-Knopf.
+      </p>
 
       <details class="platform" id="install-android">
         <summary><span class="platform-icon">📱</span> Android-App installieren</summary>
@@ -314,7 +364,7 @@
     </div>
 
     <script>
-      // Auto-detect platform und open passenden details
+      // ─── Auto-detect Plattform ───
       (() => {
         const ua = navigator.userAgent.toLowerCase();
         let target = null;
@@ -322,11 +372,102 @@
         else if (/iphone|ipad|ipod/.test(ua)) target = 'install-ios';
         else if (/windows|mac|linux/.test(ua)) target = 'install-desktop';
         if (target && location.hash === '') {
-          // Nur passenden Tab öffnen wenn keine spezifische URL angefordert
           const el = document.getElementById(target);
           if (el) el.open = true;
         }
       })();
+
+      // ─── Echter PWA-Install-Button ───
+      // Browser feuert "beforeinstallprompt" wenn die App installierbar ist.
+      // Wir capturen das Event, zeigen unseren Knopf, und triggern es per Klick.
+      let deferredPrompt = null;
+      const installBtn = document.getElementById('big-install-btn');
+      const statusEl   = document.getElementById('install-status');
+
+      function isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+      }
+
+      if (isStandalone()) {
+        installBtn.disabled = true;
+        installBtn.textContent = '✓ App ist bereits installiert';
+        installBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
+        installBtn.style.color = '#7bc080';
+        statusEl.textContent = 'Du benutzt gerade die installierte Version.';
+        statusEl.classList.add('success');
+      }
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Browser will den Default-Prompt zeigen — wir fangen ab und zeigen unseren Knopf.
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.disabled = false;
+        installBtn.textContent = '⚔ Valdermoor jetzt installieren';
+        statusEl.textContent = 'Klick den Knopf — dein Browser fragt einmal nach, dann ist die App installiert. Im Startmenü/Home-Screen sichtbar wie jede andere App.';
+      });
+
+      installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) {
+          // Kein Prompt verfügbar — entweder schon installiert, oder Browser unterstützt's nicht
+          // (z.B. Safari iOS — dort muss man manuell über "Teilen → Zum Home-Bildschirm")
+          const ua = navigator.userAgent.toLowerCase();
+          if (/iphone|ipad|ipod/.test(ua)) {
+            statusEl.textContent = 'iPhone/iPad: Tippe unten auf den Teilen-Button (Quadrat mit Pfeil) → "Zum Home-Bildschirm" → "Hinzufügen". (Safari erlaubt keinen automatischen Install.)';
+            statusEl.classList.add('error');
+            document.getElementById('install-ios').open = true;
+            document.getElementById('install-ios').scrollIntoView({ behavior: 'smooth' });
+          } else {
+            statusEl.textContent = 'Dein Browser unterstützt keinen Auto-Install. Schau weiter unten in der Plattform-Anleitung.';
+            statusEl.classList.add('error');
+          }
+          return;
+        }
+
+        installBtn.disabled = true;
+        installBtn.textContent = '⏳ Installation läuft…';
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+
+        if (outcome === 'accepted') {
+          installBtn.textContent = '✓ Installiert!';
+          installBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
+          installBtn.style.color = '#7bc080';
+          statusEl.textContent = '🎉 Valdermoor ist installiert! Du findest die App im Startmenü/Home-Screen. Beim nächsten Klick wird sie als Standalone-Fenster geöffnet.';
+          statusEl.classList.add('success');
+        } else {
+          installBtn.disabled = false;
+          installBtn.textContent = '⚔ Valdermoor jetzt installieren';
+          statusEl.textContent = 'Installation abgebrochen — kannst es jederzeit nochmal versuchen.';
+        }
+      });
+
+      window.addEventListener('appinstalled', () => {
+        installBtn.disabled = true;
+        installBtn.textContent = '✓ Installiert!';
+        installBtn.style.background = 'linear-gradient(180deg, #2a4030, #1a3020)';
+        installBtn.style.color = '#7bc080';
+        statusEl.textContent = '🎉 Installation erfolgreich. Schließ den Tab und öffne die App über dein Startmenü/Home-Screen.';
+        statusEl.classList.add('success');
+      });
+
+      // ─── Fallback nach 2s falls beforeinstallprompt nie kommt ───
+      // (z.B. Firefox auf Desktop, Safari iOS, oder schon installiert)
+      setTimeout(() => {
+        if (deferredPrompt || isStandalone()) return;  // alles ok
+        installBtn.disabled = false;
+        const ua = navigator.userAgent.toLowerCase();
+        if (/iphone|ipad|ipod/.test(ua)) {
+          installBtn.textContent = '📲 iPhone-Anleitung anzeigen';
+        } else if (/firefox/.test(ua)) {
+          installBtn.textContent = 'ℹ Firefox: manuell installieren (Anleitung lesen)';
+          statusEl.textContent = 'Firefox unterstützt PWA-Auto-Install nicht direkt. Folge der Anleitung weiter unten oder nutze Chrome/Edge.';
+        } else {
+          installBtn.textContent = '📋 Anleitung anzeigen';
+          statusEl.textContent = 'Browser meldet keine Install-Fähigkeit. Wahrscheinliche Gründe: schon installiert, Browser unterstützt PWAs nicht (Firefox), oder es fehlt HTTPS. Folge der Anleitung weiter unten.';
+        }
+      }, 2000);
     </script>
   </body>
 </html>
