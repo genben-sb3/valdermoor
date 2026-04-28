@@ -1158,8 +1158,260 @@ button { font-family: var(--font-body); cursor: pointer; }
   transform: translateY(0);
 }
 
+/* ========== Polish: Animationen + Glows ========== */
+
+/* Message-Bubbles: sanft einfaden + von unten reinrutschen */
+.msg {
+  animation: msg-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1.0) both;
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* DM-Bubble während Streaming: blinkender Cursor */
+.msg-dm .msg-body:empty::after,
+.msg-dm .msg-body::after {
+  display: none;
+}
+.msg-dm:last-child .msg-body::after {
+  content: "▎";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--dm-label);
+  animation: cursor-blink 1s steps(2) infinite;
+  vertical-align: text-top;
+}
+@keyframes cursor-blink {
+  50% { opacity: 0; }
+}
+/* Cursor verschwindet sobald die nächste Bubble kommt */
+.msg-dm:not(:last-child) .msg-body::after {
+  display: none;
+}
+
+/* Aktiver Held: subtle gold-pulse */
+.player-card.active {
+  animation: active-pulse 2.4s ease-in-out infinite;
+}
+@keyframes active-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--gold), 0 0 8px rgba(201, 168, 76, 0.15); }
+  50%      { box-shadow: 0 0 0 1px var(--gold-bright), 0 0 18px rgba(233, 198, 107, 0.35); }
+}
+
+/* HP-Bar: subtle shimmer */
+.player-card .hp-bar-inner {
+  position: relative;
+  overflow: hidden;
+}
+.player-card .hp-bar-inner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.18) 50%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: hp-shimmer 3.2s ease-in-out infinite;
+}
+@keyframes hp-shimmer {
+  0%, 60% { transform: translateX(-100%); }
+  100%    { transform: translateX(100%); }
+}
+
+/* Status-Pill: subtle pulse wenn busy */
+.status-busy {
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; box-shadow: 0 0 12px rgba(201, 168, 76, 0.35); }
+}
+
+/* Send-Button: gold shimmer on hover */
+#send-btn:hover:not(:disabled) {
+  background: linear-gradient(110deg,
+    var(--gold-bright) 0%,
+    #f4d685 50%,
+    var(--gold) 100%);
+  background-size: 200% 100%;
+  animation: btn-shimmer 1.8s linear infinite;
+}
+@keyframes btn-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Login-Box dramatischer Eintritt */
+.login-box {
+  animation: login-rise 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
+}
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(40px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Body-Hintergrund: subtle glühende Embers */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(2px 2px at 12% 28%, rgba(255, 180, 100, 0.4), transparent 50%),
+    radial-gradient(1.5px 1.5px at 78% 64%, rgba(201, 168, 76, 0.5), transparent 50%),
+    radial-gradient(1px 1px at 45% 88%, rgba(255, 200, 120, 0.3), transparent 50%),
+    radial-gradient(1.5px 1.5px at 88% 12%, rgba(180, 140, 80, 0.4), transparent 50%),
+    radial-gradient(1px 1px at 22% 76%, rgba(255, 180, 100, 0.3), transparent 50%);
+  animation: embers-drift 22s ease-in-out infinite alternate;
+  opacity: 0.6;
+}
+@keyframes embers-drift {
+  from { transform: translateY(0) translateX(0); }
+  to   { transform: translateY(-8px) translateX(4px); }
+}
+#app, #login-screen { position: relative; z-index: 1; }
+
+/* Würfel-Buttons: 3D-look bei click */
+.dice-btn:active {
+  transform: scale(0.92) rotate(-8deg);
+  transition: transform 0.1s ease-out;
+}
+.dice-btn.pulse {
+  animation: dice-pulse 0.7s ease-out 5;
+  border-color: var(--gold-bright);
+}
+@keyframes dice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(233, 198, 107, 0.7); }
+  50%      { box-shadow: 0 0 0 14px rgba(233, 198, 107, 0); }
+}
+
+/* Inventar-Items: highlight beim hinzufügen */
+#inventory-list li.highlight {
+  background: linear-gradient(90deg, rgba(201, 168, 76, 0.2), transparent);
+  animation: item-flash 1.6s ease-out;
+}
+@keyframes item-flash {
+  0%   { background-color: rgba(201, 168, 76, 0.4); }
+  100% { background-color: transparent; }
+}
+
+/* Reduce motion respect */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ========== Scrollbars ========== */
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-track { background: #0a0806; }
 ::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #4a3e2b; }
+
+/* ========== Mobile / Tablet Responsive ========== */
+@media (max-width: 900px) {
+  /* Layout stapeln statt 3 Spalten nebeneinander */
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    height: 100dvh;  /* dynamic viewport — handles mobile browser bars */
+  }
+  #character-panel, #side-panel {
+    max-height: 50vh;
+    padding: 12px 16px;
+  }
+  #character-panel { order: 1; border-bottom: 1px solid var(--panel-border); }
+  #chat-panel      { order: 2; min-height: 300px; }
+  #side-panel      { order: 3; border-top: 1px solid var(--panel-border); max-height: 40vh; }
+
+  /* Helden-Cards horizontal scrollbar */
+  #players-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x mandatory;
+  }
+  .player-card {
+    flex: 0 0 200px;
+    scroll-snap-align: start;
+  }
+
+  /* Stats-Grid kompakter */
+  .stats-grid { grid-template-columns: repeat(6, 1fr); }
+  .stat { padding: 4px 2px; }
+  .stat label { font-size: 9px; }
+  .stat span { font-size: 14px; }
+
+  /* Chat-Header umbrechen */
+  #chat-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  #chat-header h1 { font-size: 20px; }
+  #chat-header .panel-header { flex-wrap: wrap; }
+  #status { font-size: 11px; }
+  .text-btn { font-size: 16px; padding: 8px 12px; }
+  #logout-btn { padding: 10px 14px; font-size: 13px; }
+
+  /* Messages */
+  #messages { padding: 14px 14px; gap: 12px; }
+  .msg { max-width: 92%; padding: 10px 12px; font-size: 15px; }
+  .input-row { padding: 6px 14px 14px; }
+  #input { font-size: 16px; }  /* 16px verhindert iOS-Auto-Zoom */
+  #send-btn { padding: 0 18px; font-size: 13px; min-height: 44px; }
+
+  /* Würfel: kleinere aber touch-freundliche Buttons in 6er-Reihe */
+  #dice-grid {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+  }
+  .dice-btn {
+    font-size: 13px;
+    border-width: 1.5px;
+    min-height: 44px;
+  }
+
+  /* Login-Screen */
+  .login-box { padding: 20px 22px; width: 100%; max-width: 100%; }
+  .login-hero {
+    width: calc(100% + 44px);
+    height: 140px;
+    margin: -20px -22px 16px;
+  }
+
+  /* Modal kompakter */
+  .modal-box { width: min(94vw, 600px); padding: 18px 20px; }
+  .help-box { max-width: 94vw; }
+
+  /* Email-Notif */
+  .email-notif { width: min(94vw, 480px); padding: 16px; }
+  .email-code-display { font-size: 28px; letter-spacing: 0.4em; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 16px; }
+  #chat-header h1 { font-size: 18px; }
+
+  /* Charakter-Form scrollt vertical */
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+
+  /* Würfel: 4er-Reihe für sehr schmal */
+  #dice-grid { grid-template-columns: repeat(4, 1fr); }
+
+  .login-box { padding: 16px; }
+  .login-hero { height: 120px; }
+}
+
+/* Touch-Geräte: Hover-States deaktivieren */
+@media (hover: none) {
+  .dice-btn:hover, .player-card:hover, .text-btn:hover, .btn-primary:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
