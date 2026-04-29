@@ -68,10 +68,10 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           if [[ "$TAG" =~ ^v0\. ]] || [[ "$TAG" =~ -(beta|rc|alpha) ]]; then
             echo "Marking $TAG as Pre-Release (Beta)"
-            gh release edit "$TAG" --prerelease --title "Valdermoor $TAG (Beta)" || true
+            gh release edit "$TAG" --prerelease --draft=false --title "Valdermoor $TAG (Beta)" || true
           else
-            echo "Marking $TAG as Stable"
-            gh release edit "$TAG" --prerelease=false --title "Valdermoor $TAG (Stable)" || true
+            echo "Marking $TAG as Stable + Latest"
+            gh release edit "$TAG" --prerelease=false --draft=false --latest --title "Valdermoor $TAG (Stable)" || true
           fi
         shell: bash
         env:
