@@ -3,6 +3,24 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 
 import './style.css';
 import {
+  isMultiplayerAvailable,
+  createSession,
+  findSessionByCode,
+  closeSession,
+  addPlayer as mpAddPlayer,
+  listPlayers as mpListPlayers,
+  addInventoryItem as mpAddInventoryItem,
+  listInventory as mpListInventory,
+  addMessage as mpAddMessage,
+  listMessages as mpListMessages,
+  subscribeToSession,
+  type MpSession,
+  type MpPlayer as _MpPlayer,
+  type MpMessage,
+  type MpInventoryItem,
+  type SessionSubscription,
+} from './multiplayer';
+import {
   playDiceRoll,
   playItemPickup,
   playItemLost,
@@ -458,6 +476,14 @@ let pendingAction: PendingAction | null = null;
 let pendingCode: string | null = null;
 let pendingCodeExpiry = 0;
 let lmProvider: LmProvider = 'unknown';
+
+// ─── Multiplayer-State ────────────────────────────────────────
+type GameMode = 'solo' | 'host' | 'guest';
+let gameMode: GameMode = 'solo';
+let mpSession: MpSession | null = null;
+let mpSubscription: SessionSubscription | null = null;
+let mpIsHost = false;
+const seenMpMessageIds = new Set<number>();
 
 // ────────────────────────────────────────────────────────────
 // DOM helpers
@@ -1103,8 +1129,200 @@ function onLoggedIn() {
   if (save) {
     resumeGame(save);
   } else {
-    showCharModal();
+    showModeModal();
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// Mode-Selector (Solo / Host / Join)
+// ────────────────────────────────────────────────────────────
+
+function showModeModal() {
+  const modal = document.getElementById('mode-modal') as HTMLDivElement | null;
+  if (!modal) {
+    showCharModal();
+    return;
+  }
+  modal.hidden = false;
+
+  const mpAvail = isMultiplayerAvailable();
+  const hostBtn = document.getElementById('mode-host-btn') as HTMLButtonElement | null;
+  const joinBtn = document.getElementById('mode-join-btn') as HTMLButtonElement | null;
+  const warn = document.getElementById('mode-mp-warn') as HTMLDivElement | null;
+  if (hostBtn) hostBtn.toggleAttribute('disabled', !mpAvail);
+  if (joinBtn) joinBtn.toggleAttribute('disabled', !mpAvail);
+  if (warn) warn.hidden = mpAvail;
+}
+
+function hideModeModal() {
+  const modal = document.getElementById('mode-modal') as HTMLDivElement | null;
+  if (modal) modal.hidden = true;
+}
+
+function setupModeModal() {
+  document.querySelectorAll<HTMLButtonElement>('.mode-card').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode as 'solo' | 'host' | 'join';
+      hideModeModal();
+      if (mode === 'solo') {
+        gameMode = 'solo';
+        showCharModal();
+      } else if (mode === 'host') {
+        gameMode = 'host';
+        showCharModal();  // Host erstellt erst Charakter, dann Session
+      } else if (mode === 'join') {
+        gameMode = 'guest';
+        showJoinModal();
+      }
+    });
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// Join-Modal (Beitreten via Code)
+// ────────────────────────────────────────────────────────────
+
+function showJoinModal() {
+  const modal = document.getElementById('join-modal') as HTMLDivElement | null;
+  if (modal) modal.hidden = false;
+  const input = document.getElementById('join-code') as HTMLInputElement | null;
+  setTimeout(() => input?.focus(), 50);
+}
+
+function hideJoinModal() {
+  const modal = document.getElementById('join-modal') as HTMLDivElement | null;
+  if (modal) modal.hidden = true;
+}
+
+function setupJoinModal() {
+  const submitBtn = document.getElementById('join-submit-btn') as HTMLButtonElement | null;
+  const backBtn = document.getElementById('join-back-btn') as HTMLButtonElement | null;
+  const input = document.getElementById('join-code') as HTMLInputElement | null;
+  const errEl = document.getElementById('join-error') as HTMLDivElement | null;
+
+  backBtn?.addEventListener('click', () => {
+    hideJoinModal();
+    showModeModal();
+  });
+
+  const tryJoin = async () => {
+    if (!input || !errEl) return;
+    errEl.textContent = '';
+    const code = input.value.trim().toUpperCase();
+    if (!code) {
+      errEl.textContent = 'Bitte Code eingeben.';
+      return;
+    }
+    try {
+      const session = await findSessionByCode(code);
+      if (!session) {
+        errEl.textContent = 'Code nicht gefunden oder Runde geschlossen.';
+        return;
+      }
+      mpSession = session;
+      mpIsHost = false;
+      ageMode = session.age_mode;
+      adventurePrompt = session.adventure_prompt ?? '';
+      hideJoinModal();
+      // Guest erstellt seinen Helden, dann joint er die Session
+      showCharModal();
+    } catch (err) {
+      console.error(err);
+      errEl.textContent = `Fehler beim Beitreten: ${(err as Error).message}`;
+    }
+  };
+
+  submitBtn?.addEventListener('click', () => void tryJoin());
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void tryJoin();
+    }
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// Lobby-Modal (Host wartet auf Mitspieler)
+// ────────────────────────────────────────────────────────────
+
+function showLobbyModal() {
+  const modal = document.getElementById('lobby-modal') as HTMLDivElement | null;
+  if (modal) modal.hidden = false;
+}
+
+function hideLobbyModal() {
+  const modal = document.getElementById('lobby-modal') as HTMLDivElement | null;
+  if (modal) modal.hidden = true;
+}
+
+function renderLobbyPlayers() {
+  const list = document.getElementById('lobby-players') as HTMLUListElement | null;
+  if (!list) return;
+  list.innerHTML = '';
+  if (players.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'lobby-empty';
+    li.textContent = 'Noch niemand beigetreten…';
+    list.appendChild(li);
+    return;
+  }
+  players.forEach((p, idx) => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span style="font-size: 18px;">${classEmoji(p.class)}</span>
+      <span class="lobby-player-name">${escapeHtml(p.name)}</span>
+      <span class="lobby-player-class">${escapeHtml(p.class)}</span>
+      ${idx === 0 && mpIsHost ? '<span class="lobby-player-host">👑 HOST</span>' : ''}
+    `;
+    list.appendChild(li);
+  });
+}
+
+function setupLobbyModal() {
+  const copyBtn = document.getElementById('lobby-copy-btn') as HTMLButtonElement | null;
+  const cancelBtn = document.getElementById('lobby-cancel-btn') as HTMLButtonElement | null;
+  const startBtn = document.getElementById('lobby-start-btn') as HTMLButtonElement | null;
+
+  copyBtn?.addEventListener('click', async () => {
+    if (!mpSession) return;
+    try {
+      await navigator.clipboard.writeText(mpSession.code);
+      copyBtn.textContent = '✓ Kopiert!';
+      copyBtn.classList.add('copied');
+      setTimeout(() => {
+        copyBtn.textContent = '📋 Kopieren';
+        copyBtn.classList.remove('copied');
+      }, 2000);
+    } catch {
+      // Clipboard fail — Code ist eh user-selectable
+    }
+  });
+
+  cancelBtn?.addEventListener('click', async () => {
+    if (!confirm('Runde wirklich abbrechen? Mitspieler werden rausgeworfen.')) return;
+    if (mpSession) {
+      try { await closeSession(mpSession.id); } catch { /* */ }
+    }
+    cleanupMultiplayer();
+    hideLobbyModal();
+    location.reload();
+  });
+
+  startBtn?.addEventListener('click', () => {
+    hideLobbyModal();
+    beginAdventure();
+  });
+}
+
+function cleanupMultiplayer() {
+  if (mpSubscription) {
+    mpSubscription.unsubscribe();
+    mpSubscription = null;
+  }
+  mpSession = null;
+  mpIsHost = false;
+  gameMode = 'solo';
+  seenMpMessageIds.clear();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1346,8 +1564,234 @@ function setupModal() {
       alert(`Doppelter Name: "${dup}". Jeder Held braucht einen eindeutigen Namen, sonst klappt das Tag-System nicht.`);
       return;
     }
-    beginAdventure();
+    void onCharsReady();
   });
+}
+
+async function onCharsReady() {
+  if (gameMode === 'solo') {
+    beginAdventure();
+    return;
+  }
+
+  if (gameMode === 'host') {
+    // Host: Session in Supabase erstellen
+    try {
+      const session = await createSession({
+        hostUser: currentUser ?? 'Host',
+        ageMode,
+        adventurePrompt,
+      });
+      mpSession = session;
+      mpIsHost = true;
+      // Host's Helden in Supabase persistieren
+      for (const p of players) {
+        await mpAddPlayer({
+          id: p.id,
+          session_id: session.id,
+          user_name: currentUser ?? 'Host',
+          player_name: p.name,
+          player_class: p.class,
+          hp: p.hp,
+          max_hp: p.maxHp,
+          stats: p.stats,
+          color: p.color,
+        });
+      }
+      // Realtime starten + Lobby öffnen
+      attachMultiplayerSubscription();
+      hideCharModal();
+      const lobbyCodeEl = document.getElementById('lobby-code');
+      if (lobbyCodeEl) lobbyCodeEl.textContent = session.code;
+      renderLobbyPlayers();
+      showLobbyModal();
+    } catch (err) {
+      console.error(err);
+      alert(`Konnte Runde nicht erstellen: ${(err as Error).message}\n\nFallback: Solo-Modus.`);
+      gameMode = 'solo';
+      beginAdventure();
+    }
+    return;
+  }
+
+  if (gameMode === 'guest') {
+    // Guest: zur existierenden Session beitreten
+    if (!mpSession) {
+      alert('Keine Session geladen. Wechsle zu Solo.');
+      gameMode = 'solo';
+      beginAdventure();
+      return;
+    }
+    try {
+      // Helden in Supabase speichern
+      for (const p of players) {
+        await mpAddPlayer({
+          id: p.id,
+          session_id: mpSession.id,
+          user_name: currentUser ?? 'Guest',
+          player_name: p.name,
+          player_class: p.class,
+          hp: p.hp,
+          max_hp: p.maxHp,
+          stats: p.stats,
+          color: p.color,
+        });
+      }
+      // Andere Spieler + Inventar + History laden
+      const otherPlayers = await mpListPlayers(mpSession.id);
+      for (const other of otherPlayers) {
+        if (!players.find((x) => x.id === other.id)) {
+          players.push({
+            id: other.id,
+            name: other.player_name,
+            class: other.player_class,
+            hp: other.hp,
+            maxHp: other.max_hp,
+            stats: other.stats as Record<StatKey, number>,
+            color: other.color,
+          });
+        }
+      }
+      const items = await mpListInventory(mpSession.id);
+      inventory.length = 0;
+      for (const it of items) {
+        for (let i = 0; i < it.quantity; i++) inventory.push({ name: it.item_name, quantity: 1 });
+      }
+      const history = await mpListMessages(mpSession.id);
+      attachMultiplayerSubscription();
+      hideCharModal();
+      // Direkt ins Spiel — Host hat es schon gestartet
+      beginAdventureAsGuest(history);
+    } catch (err) {
+      console.error(err);
+      alert(`Konnte nicht beitreten: ${(err as Error).message}`);
+    }
+    return;
+  }
+}
+
+function attachMultiplayerSubscription() {
+  if (!mpSession) return;
+  if (mpSubscription) mpSubscription.unsubscribe();
+  mpSubscription = subscribeToSession(mpSession.id, {
+    onMessage: (msg) => handleRemoteMessage(msg),
+    onPlayerChange: (pl, type) => handleRemotePlayer(pl, type),
+    onInventoryChange: (it, type) => handleRemoteInventory(it, type),
+    onSessionClose: () => {
+      addErrorBubble('⚠ Der Host hat die Runde beendet. Das Spiel ist vorbei.');
+      cleanupMultiplayer();
+    },
+  });
+}
+
+function handleRemoteMessage(msg: MpMessage) {
+  if (seenMpMessageIds.has(msg.id)) return;
+  seenMpMessageIds.add(msg.id);
+
+  // Lokale Messages NICHT doppelt rendern (sender hat sie schon angezeigt)
+  // Wir checken ob diese Message schon in messages[] ist anhand content+role+speaker
+  const existing = messages.find((m) =>
+    m.role === msg.role && m.content === msg.content && (m.speaker ?? null) === (msg.speaker ?? null),
+  );
+  if (existing) return;
+
+  // Neu rendern
+  if (msg.role === 'user' && msg.speaker === 'Erzähler' && msg.content.startsWith('[ERZÄHLER]:')) {
+    addNarratorBubble(msg.content.replace(/^\[ERZÄHLER\]:\s*/, ''));
+    messages.push({ role: 'user', content: msg.content, speaker: 'Erzähler' });
+  } else if (msg.role === 'user' && msg.speaker) {
+    const p = players.find((x) => x.name === msg.speaker);
+    const prefix = msg.speaker + ':';
+    const text = msg.content.startsWith(prefix) ? msg.content.slice(prefix.length).trim() : msg.content;
+    addPlayerBubble(msg.speaker, text, p?.color ?? '#888');
+    messages.push({ role: 'user', content: msg.content, speaker: msg.speaker });
+  } else if (msg.role === 'assistant') {
+    const dmBody = addDMBubble('');
+    dmBody.textContent = stripGameTags(msg.content);
+    parseInventory(msg.content);
+    parseInventoryLoss(msg.content);
+    parseDamage(msg.content);
+    parseHeal(msg.content);
+    messages.push({ role: 'assistant', content: msg.content });
+  }
+}
+
+function handleRemotePlayer(pl: _MpPlayer, type: 'INSERT' | 'UPDATE' | 'DELETE') {
+  if (type === 'INSERT') {
+    if (!players.find((x) => x.id === pl.id)) {
+      players.push({
+        id: pl.id,
+        name: pl.player_name,
+        class: pl.player_class,
+        hp: pl.hp,
+        maxHp: pl.max_hp,
+        stats: pl.stats as Record<StatKey, number>,
+        color: pl.color,
+      });
+      renderPlayersSidebar();
+      renderPlayerSelector();
+      renderLobbyPlayers();
+    }
+  } else if (type === 'UPDATE') {
+    const local = players.find((x) => x.id === pl.id);
+    if (local) {
+      local.hp = pl.hp;
+      renderPlayersSidebar();
+    }
+  } else if (type === 'DELETE') {
+    players = players.filter((x) => x.id !== pl.id);
+    renderPlayersSidebar();
+    renderPlayerSelector();
+    renderLobbyPlayers();
+  }
+}
+
+function handleRemoteInventory(
+  it: MpInventoryItem | { session_id: string; item_name: string },
+  type: 'INSERT' | 'UPDATE' | 'DELETE',
+) {
+  // Vereinfacht: bei Änderung neu laden
+  if (!mpSession) return;
+  void mpListInventory(mpSession.id).then((items) => {
+    inventory.length = 0;
+    for (const it of items) {
+      for (let i = 0; i < it.quantity; i++) inventory.push({ name: it.item_name, quantity: 1 });
+    }
+    renderInventory();
+  });
+  void it; void type; // unused
+}
+
+function beginAdventureAsGuest(history: MpMessage[]) {
+  activePlayerId = players[0].id;
+  $<HTMLElement>('#app').hidden = false;
+  messages = [{ role: 'system', content: buildSystemPrompt() }];
+  renderMessagesArea(true);
+  renderPlayersSidebar();
+  renderPlayerSelector();
+  renderInventory();
+  updateUserChip();
+  syncAgeModeSelect();
+
+  // Bestehenden Verlauf rendern
+  for (const msg of history) {
+    seenMpMessageIds.add(msg.id);
+    if (msg.role === 'user' && msg.speaker === 'Erzähler' && msg.content.startsWith('[ERZÄHLER]:')) {
+      addNarratorBubble(msg.content.replace(/^\[ERZÄHLER\]:\s*/, ''));
+      messages.push({ role: 'user', content: msg.content, speaker: 'Erzähler' });
+    } else if (msg.role === 'user' && msg.speaker) {
+      const p = players.find((x) => x.name === msg.speaker);
+      const prefix = msg.speaker + ':';
+      const text = msg.content.startsWith(prefix) ? msg.content.slice(prefix.length).trim() : msg.content;
+      addPlayerBubble(msg.speaker, text, p?.color ?? '#888');
+      messages.push({ role: 'user', content: msg.content, speaker: msg.speaker });
+    } else if (msg.role === 'assistant') {
+      const dmBody = addDMBubble('');
+      dmBody.textContent = stripGameTags(msg.content);
+      messages.push({ role: 'assistant', content: msg.content });
+    }
+  }
+  setStatus(`Multiplayer · Beigetreten: ${mpSession?.code ?? ''}`, 'ok');
 }
 
 function beginAdventure() {
@@ -1751,6 +2195,16 @@ async function sendToLMStudio(userText: string, speaker: string) {
       : `${speaker}: ${userText}`;
   messages.push({ role: 'user', content: decorated, speaker });
 
+  // MP-Sync: User-Message zu Supabase pushen
+  if (mpSession) {
+    void mpAddMessage({
+      sessionId: mpSession.id,
+      role: 'user',
+      speaker,
+      content: decorated,
+    }).catch((err) => console.warn('MP message push fehlgeschlagen:', err));
+  }
+
   if (speaker === 'Erzähler') {
     // Wenn die Erzähler-Eingabe vom User kam (manuell, mit [ERZÄHLER]: prefix),
     // sichtbar machen. Wenn intern (z.B. Eröffnungs-Prompt), still senden.
@@ -1870,6 +2324,17 @@ async function sendToLMStudio(userText: string, speaker: string) {
       return;
     }
     messages.push({ role: 'assistant', content: fullText });
+
+    // MP-Sync: DM-Antwort nur vom Host pushen (sonst doppelt wenn beide
+    // Spieler die KI fragen). Der Host-Stream ist die "kanonische" Antwort.
+    if (mpSession && mpIsHost) {
+      void mpAddMessage({
+        sessionId: mpSession.id,
+        role: 'assistant',
+        content: fullText,
+      }).catch((err) => console.warn('MP assistant push fehlgeschlagen:', err));
+    }
+
     parseInventory(fullText);
     parseInventoryLoss(fullText);
     parseDamage(fullText);
@@ -2047,6 +2512,15 @@ function parseInventory(text: string) {
   if (changed) {
     playItemPickup();
     renderInventory();
+    // MP-Sync: nur Host pusht Inventar-Adds
+    if (mpSession && mpIsHost) {
+      const regex = /\[ITEM:\s*([^\]]+)\]/gi;
+      let m;
+      while ((m = regex.exec(text)) !== null) {
+        const name = m[1].trim();
+        if (name) void mpAddInventoryItem(mpSession.id, name).catch(() => {});
+      }
+    }
     window.setTimeout(() => {
       highlightedItems.clear();
       renderInventory();
@@ -2732,6 +3206,9 @@ function init() {
   setupModelSwitcher();
   setupVoiceToggle();
   setupSoundToggle();
+  setupModeModal();
+  setupJoinModal();
+  setupLobbyModal();
 
   window.addEventListener('beforeunload', () => {
     currentAbortController?.abort();

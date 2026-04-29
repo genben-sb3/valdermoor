@@ -1,0 +1,116 @@
+-- ════════════════════════════════════════════════════════════
+-- Valdermoor Multiplayer Schema (idempotent — kann mehrfach laufen)
+-- ════════════════════════════════════════════════════════════
+-- Einmalig in Supabase ausführen:
+--   1. Linke Sidebar → SQL Editor
+--   2. New Query
+--   3. Diesen Inhalt komplett einfügen
+--   4. RUN klicken (oder Ctrl+Enter)
+
+-- Extension für gen_random_uuid() (auf Supabase normalerweise schon da)
+create extension if not exists pgcrypto;
+
+-- ─── Spielrunden / Sessions ────────────────────────────────
+create table if not exists public.sessions (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null,
+  host_user text not null,
+  age_mode text not null default 'jugend',
+  adventure_prompt text default '',
+  created_at timestamptz not null default now(),
+  closed_at timestamptz
+);
+create index if not exists idx_sessions_code on public.sessions(code);
+
+-- ─── Helden (Spieler-Charaktere) pro Session ───────────────
+create table if not exists public.session_players (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  user_name text not null,
+  player_name text not null,
+  player_class text not null,
+  hp int not null,
+  max_hp int not null,
+  stats jsonb not null,
+  color text not null,
+  joined_at timestamptz not null default now()
+);
+create index if not exists idx_players_session on public.session_players(session_id);
+
+-- ─── Geteiltes Inventar ────────────────────────────────────
+create table if not exists public.session_inventory (
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  item_name text not null,
+  quantity int not null default 1,
+  added_at timestamptz not null default now(),
+  primary key (session_id, item_name)
+);
+
+-- ─── Chat-Verlauf ──────────────────────────────────────────
+create table if not exists public.session_messages (
+  id bigint generated always as identity primary key,
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant', 'system')),
+  speaker text,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_messages_session_time on public.session_messages(session_id, created_at);
+
+-- ════════════════════════════════════════════════════════════
+-- Row-Level-Security: Wer den Code kennt, darf alles
+-- (MVP-einfach für Schul-Demo)
+-- ════════════════════════════════════════════════════════════
+
+alter table public.sessions enable row level security;
+alter table public.session_players enable row level security;
+alter table public.session_inventory enable row level security;
+alter table public.session_messages enable row level security;
+
+-- Bestehende Policies droppen (idempotent), dann neu erstellen
+do $$
+declare r record;
+begin
+  for r in
+    select policyname, schemaname || '.' || tablename as full_table
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('sessions', 'session_players', 'session_inventory', 'session_messages')
+  loop
+    execute format('drop policy if exists %I on %s', r.policyname, r.full_table);
+  end loop;
+end $$;
+
+create policy "anon_all_sessions" on public.sessions
+  for all using (true) with check (true);
+create policy "anon_all_players" on public.session_players
+  for all using (true) with check (true);
+create policy "anon_all_inventory" on public.session_inventory
+  for all using (true) with check (true);
+create policy "anon_all_messages" on public.session_messages
+  for all using (true) with check (true);
+
+-- ════════════════════════════════════════════════════════════
+-- Realtime aktivieren — defensiv, ignoriert "already exists"
+-- ════════════════════════════════════════════════════════════
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.sessions;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.session_players;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.session_inventory;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.session_messages;
+  exception when duplicate_object then null;
+  end;
+end $$;
+
+-- ✅ Fertig — du solltest "Success. No rows returned" sehen

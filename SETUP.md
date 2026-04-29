@@ -1,5 +1,8 @@
 # Valdermoor — Setup-Anleitung
 
+> **Multiplayer ist neu** ⚔️ — siehe Schritt 6 unten zum Aktivieren via Supabase.
+
+
 Alles was du selbst machen musst, damit das Spiel komplett läuft.
 Reihenfolge: 1 → 2 → (3) → (4) → (5). Schritte 3, 4 und 5 sind optional.
 
@@ -231,7 +234,44 @@ Live-URL: `https://valdermoor.vercel.app` (oder ähnlich, Vercel zeigt sie an).
 
 ---
 
-## 6. (Optional) GitHub-Remote für Push
+## 6. (Optional) Multiplayer via Supabase
+
+Mehrere Spieler in derselben Runde — Code teilen, beitreten, alle sehen Story+Inventar+HP synchron.
+
+### 6.1 Supabase-Account
+1. https://supabase.com → **Sign in with GitHub**
+2. **New Project** → Name `valdermoor`, Region `Central Europe (Frankfurt)`, Plan `Free`
+3. ⏳ 2-3 Min warten bis fertig
+
+### 6.2 Schema importieren
+1. Linke Sidebar → **SQL Editor** → **New Query**
+2. Inhalt von `supabase/schema.sql` (im Projekt) komplett reinkopieren
+3. **Run** → "Success. No rows returned" sollte erscheinen
+4. Sidebar → **Database → Tables**: `sessions`, `session_players`, `session_inventory`, `session_messages` müssen da sein
+
+### 6.3 Credentials in `.env`
+1. Sidebar → **Project Settings** → **API Keys**
+2. Kopier Project URL + den **Publishable key** (`sb_publishable_...`)
+3. In `.env` eintragen:
+   ```
+   VITE_SUPABASE_URL=https://xxxxxxx.supabase.co
+   VITE_SUPABASE_KEY=sb_publishable_xxxxxxxxxxxx
+   ```
+4. `npm run dev` neu starten
+
+### 6.4 Wie spielen?
+- **Solo**: wie bisher (Multiplayer einfach nicht wählen)
+- **Runde erstellen**: Hauptmenü → "👑 Runde erstellen" → Helden anlegen → Code wird angezeigt → mit Freunden teilen → "Spiel starten"
+- **Runde beitreten**: Hauptmenü → "🚪 Runde beitreten" → Code eintragen → eigene Helden anlegen → automatisch im Spiel
+
+### 6.5 Free-Tier-Limits (Supabase)
+- 500 MB Datenbank → tausende Sessions
+- 5 GB Bandwidth/Monat → reichlich für Schul-Demo
+- 200 concurrent Realtime-Verbindungen → ~50 gleichzeitige Multiplayer-Runden
+
+---
+
+## 7. (Optional) GitHub-Remote für Push
 
 Aktuell speicherst du nur lokal. Wenn du `git push` willst:
 

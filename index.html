@@ -255,6 +255,71 @@
     </main>
 
     <!-- CHARACTER CREATION MODAL (nach Login, vor Spielstart) -->
+    <!-- MODUS-AUSWAHL — vor der Charakter-Erstellung -->
+    <div id="mode-modal" class="modal-overlay" hidden>
+      <div class="modal-box mode-box">
+        <h2>⚔️ Wie willst du spielen?</h2>
+        <div class="mode-grid">
+          <button type="button" class="mode-card" data-mode="solo">
+            <div class="mode-icon">🎲</div>
+            <h3>Solo</h3>
+            <p>Du allein gegen die KI. Klassisches Valdermoor-Erlebnis.</p>
+          </button>
+          <button type="button" class="mode-card" data-mode="host" id="mode-host-btn">
+            <div class="mode-icon">👑</div>
+            <h3>Runde erstellen</h3>
+            <p>Du erstellst einen Raum + bekommst einen Code, den du mit Freunden teilst.</p>
+          </button>
+          <button type="button" class="mode-card" data-mode="join" id="mode-join-btn">
+            <div class="mode-icon">🚪</div>
+            <h3>Runde beitreten</h3>
+            <p>Du hast einen Code von einem Freund bekommen? Hier eintragen.</p>
+          </button>
+        </div>
+        <div id="mode-mp-warn" class="mode-warn" hidden>
+          ⚠ Multiplayer ist nicht konfiguriert (kein Supabase-Setup). Du kannst Solo spielen.
+        </div>
+      </div>
+    </div>
+
+    <!-- BEITRETEN-MODAL: Code eingeben -->
+    <div id="join-modal" class="modal-overlay" hidden>
+      <div class="modal-box join-box">
+        <h2>🚪 Runde beitreten</h2>
+        <p class="modal-sub">Gib den Code ein den dir der Spielleiter gegeben hat.</p>
+        <div class="modal-field">
+          <label for="join-code">Code</label>
+          <input type="text" id="join-code" placeholder="VALDR-XXXX" maxlength="10" autocomplete="off" autocapitalize="characters" style="font-family: var(--mono); letter-spacing: 0.2em; font-size: 18px; text-transform: uppercase;" />
+        </div>
+        <div class="login-error" id="join-error"></div>
+        <div class="modal-actions">
+          <button type="button" id="join-back-btn" class="btn-secondary">← Zurück</button>
+          <button type="button" id="join-submit-btn" class="btn-primary">Beitreten</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOBBY: nach Erstellen einer Runde, vor Spielstart -->
+    <div id="lobby-modal" class="modal-overlay" hidden>
+      <div class="modal-box lobby-box">
+        <h2>👑 Deine Runde ist offen</h2>
+        <p class="modal-sub">Teile diesen Code mit deinen Freunden — sobald sie beigetreten sind, klick "Spiel starten".</p>
+        <div class="lobby-code-display">
+          <span class="lobby-code-label">Code:</span>
+          <span class="lobby-code-value" id="lobby-code">VALDR-XXXX</span>
+          <button type="button" id="lobby-copy-btn" title="Code kopieren">📋 Kopieren</button>
+        </div>
+        <h3 class="lobby-section-title">Mitspieler:</h3>
+        <ul id="lobby-players" class="lobby-players-list">
+          <li class="lobby-empty">Noch niemand beigetreten…</li>
+        </ul>
+        <div class="modal-actions">
+          <button type="button" id="lobby-cancel-btn" class="btn-secondary">Runde abbrechen</button>
+          <button type="button" id="lobby-start-btn" class="btn-primary">⚔️ Spiel starten</button>
+        </div>
+      </div>
+    </div>
+
     <div id="char-modal" class="modal-overlay" hidden>
       <div class="modal-box">
         <h2>Helden erstellen</h2>
