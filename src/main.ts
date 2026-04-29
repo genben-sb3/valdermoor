@@ -1206,12 +1206,48 @@ function setupEmailCodeModal() {
 function onLoggedIn() {
   playLoginSuccess();
   hideLoginScreen();
+  startInactivityLock();
   const save = loadGame();
   if (save) {
     resumeGame(save);
   } else {
     showModeModal();
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// 🔒 Inactivity-Lock: Bens Account wird nach 5 Min Inaktivität
+// automatisch ausgeloggt. Schutz wenn er PC offen lässt.
+// ────────────────────────────────────────────────────────────
+
+const INACTIVITY_LOCK_MS = 5 * 60 * 1000;
+let inactivityTimer: number | null = null;
+let inactivityHandlersBound = false;
+
+function isAccountWithLock(): boolean {
+  return currentUser?.toLowerCase() === 'ben';
+}
+
+function resetInactivityTimer() {
+  if (inactivityTimer) clearTimeout(inactivityTimer);
+  if (!isAccountWithLock()) return;
+  inactivityTimer = window.setTimeout(() => {
+    stopSpeaking();
+    saveGame();
+    clearSession();
+    alert('🔒 5 Minuten keine Aktivität — automatisch abgemeldet (nur Ben-Account).');
+    location.reload();
+  }, INACTIVITY_LOCK_MS);
+}
+
+function startInactivityLock() {
+  if (!isAccountWithLock()) return;
+  resetInactivityTimer();
+  if (inactivityHandlersBound) return;
+  inactivityHandlersBound = true;
+  ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'].forEach((evt) => {
+    document.addEventListener(evt, resetInactivityTimer, { passive: true });
+  });
 }
 
 // ────────────────────────────────────────────────────────────
