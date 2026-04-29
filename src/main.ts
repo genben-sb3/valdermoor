@@ -1211,7 +1211,16 @@ function renderPlayerForms() {
   nameInput.value = p.name;
   nameInput.addEventListener('input', () => {
     p.name = nameInput.value;
-    renderPlayerTabs();
+    // Surgical: nur das Tab-Label updaten, NICHT komplett re-rendern.
+    // Vorher: renderPlayerTabs() → DOM-Wipe → race-condition (Input verliert
+    // Fokus mid-typing, "manchmal geht's manchmal nicht").
+    const tabEl = document.querySelector(`.player-tab[data-id="${p.id}"]`);
+    if (tabEl) {
+      const remove = tabEl.querySelector('.remove-x');
+      const idx = players.indexOf(p);
+      tabEl.firstChild!.textContent = p.name.trim() || `Spieler ${idx + 1}`;
+      if (remove && !tabEl.contains(remove)) tabEl.appendChild(remove);
+    }
   });
 
   const classSel = $<HTMLSelectElement>('.form-class', node);
