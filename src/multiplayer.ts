@@ -158,6 +158,33 @@ export async function cloudDeleteAccount(usernameLower: string): Promise<boolean
   return true;
 }
 
+// 💀 Globaler Broadcast-Channel für creepy Server-Events
+let globalChannel: RealtimeChannel | null = null;
+
+export function subscribeToGlobalEvents(handlers: { onShutdown?: () => void }): () => void {
+  if (!isMultiplayerAvailable()) return () => {};
+  const supa = getClient();
+  globalChannel = supa
+    .channel('valdermoor-global', { config: { broadcast: { self: false } } })
+    .on('broadcast', { event: 'shutdown' }, () => handlers.onShutdown?.())
+    .subscribe();
+  return () => {
+    if (globalChannel) {
+      void supa.removeChannel(globalChannel);
+      globalChannel = null;
+    }
+  };
+}
+
+export async function broadcastShutdown(): Promise<void> {
+  if (!isMultiplayerAvailable()) return;
+  const supa = getClient();
+  const ch = supa.channel('valdermoor-global');
+  await ch.subscribe();
+  await ch.send({ type: 'broadcast', event: 'shutdown', payload: { ts: Date.now() } });
+  setTimeout(() => void supa.removeChannel(ch), 1000);
+}
+
 export async function cloudWipeAllSessions(): Promise<boolean> {
   if (!isMultiplayerAvailable()) return false;
   const supa = getClient();

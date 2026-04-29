@@ -21,6 +21,8 @@ import {
   cloudBanUser,
   cloudDeleteAccount,
   cloudWipeAllSessions,
+  subscribeToGlobalEvents,
+  broadcastShutdown,
   type MpSession,
   type MpPlayer as _MpPlayer,
   type MpMessage,
@@ -1243,48 +1245,123 @@ function isGodUser(): boolean {
   return currentUser?.toLowerCase() === 'ben';
 }
 
-// 💀 Glitch-Hack-Animation vor Server-Shutdown
-async function runGlitchHackAnimation(victimCount: number): Promise<void> {
+const GLITCH_OVERRIDE_PWD = '***REMOVED***';
+let glitchPhaseTimer: number | null = null;
+
+function fillGlitchMatrix() {
+  const matrix = document.getElementById('glitch-matrix') as HTMLDivElement | null;
+  if (!matrix) return;
+  const lines: string[] = [];
+  for (let i = 0; i < 200; i++) {
+    let line = '';
+    for (let j = 0; j < 80; j++) line += Math.random() < 0.5 ? '0' : '1';
+    lines.push(line);
+  }
+  matrix.textContent = lines.join('\n');
+}
+
+function showGlitchOverlay(opts: { allowOverride: boolean }) {
   const overlay = document.getElementById('glitch-overlay') as HTMLDivElement | null;
   const sub = document.getElementById('glitch-sub') as HTMLDivElement | null;
-  const matrix = document.getElementById('glitch-matrix') as HTMLDivElement | null;
+  const prompt = document.getElementById('glitch-prompt') as HTMLDivElement | null;
+  const input = document.getElementById('glitch-input') as HTMLInputElement | null;
+  const warn = document.getElementById('glitch-warn') as HTMLParagraphElement | null;
   if (!overlay) return;
   overlay.hidden = false;
+  fillGlitchMatrix();
 
-  // Matrix-Style Background-Text
-  if (matrix) {
-    const chars = '01';
-    const lines: string[] = [];
-    for (let i = 0; i < 200; i++) {
-      let line = '';
-      for (let j = 0; j < 80; j++) line += chars[Math.floor(Math.random() * chars.length)];
-      lines.push(line);
-    }
-    matrix.textContent = lines.join('\n');
-  }
-
-  // Sub-Text durchwechseln
+  // Sub-text loop infinitely
   const phases = [
-    'INITIALIZING WIPE…',
-    `BREACHING ${victimCount} ACCOUNTS…`,
-    'CORRUPTING DATA…',
-    'OVERWRITING SECTORS…',
-    'BYPASSING SECURITY…',
-    'EXECUTING TERMINATION…',
+    'YOU HAVE BEEN HACKED',
+    'DATA CORRUPTED',
+    'ACCESS REVOKED',
+    'SECURITY BREACHED',
+    'CONNECTION LOST',
+    'NO ESCAPE',
   ];
-  for (let i = 0; i < phases.length; i++) {
-    if (sub) sub.textContent = phases[i];
-    await new Promise((r) => setTimeout(r, 350));
-  }
+  let phaseIdx = 0;
+  if (glitchPhaseTimer) clearInterval(glitchPhaseTimer);
+  glitchPhaseTimer = window.setInterval(() => {
+    if (sub) sub.textContent = phases[phaseIdx % phases.length];
+    phaseIdx++;
+    fillGlitchMatrix();
+  }, 800);
 
-  // Letzte 500ms: Standby vor dem echten Wipe
-  if (sub) sub.textContent = '⚠ DELETING ⚠';
-  await new Promise((r) => setTimeout(r, 500));
+  // Override-Prompt nur für Ben sichtbar — andere können nicht entkommen
+  if (prompt) prompt.style.display = opts.allowOverride ? 'block' : 'none';
+
+  if (opts.allowOverride && input) {
+    input.value = '';
+    if (warn) warn.textContent = '';
+    setTimeout(() => input.focus(), 100);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (input.value === GLITCH_OVERRIDE_PWD) {
+          input.removeEventListener('keydown', onKey);
+          void runRestoreAnimation();
+        } else {
+          if (warn) warn.textContent = '⚠ ACCESS DENIED — TRY AGAIN';
+          input.value = '';
+        }
+      }
+    };
+    input.addEventListener('keydown', onKey);
+  }
+}
+
+// Initiator-Animation: Ben sieht dieselbe creepy Animation,
+// kann sich aber selbst per Pwd befreien (ohne wipe abzubrechen)
+async function runGlitchHackAnimation(_victimCount: number): Promise<void> {
+  showGlitchOverlay({ allowOverride: true });
+  // Wipe läuft im Hintergrund weiter, Ben kann jederzeit ***REMOVED*** tippen
+}
+
+async function runRestoreAnimation(): Promise<void> {
+  const overlay = document.getElementById('glitch-overlay') as HTMLDivElement | null;
+  const sub = document.getElementById('glitch-sub') as HTMLDivElement | null;
+  const txt = document.querySelector('.glitch-text') as HTMLDivElement | null;
+  const prompt = document.getElementById('glitch-prompt') as HTMLDivElement | null;
+  if (!overlay) return;
+  if (prompt) prompt.style.display = 'none';
+  if (txt) {
+    txt.textContent = 'SYSTEM_RESTORE_OK';
+    txt.setAttribute('data-text', 'SYSTEM_RESTORE_OK');
+    txt.style.color = '#7bc080';
+    txt.style.textShadow = '2px 0 #00ff88, -2px 0 #00ffaa';
+  }
+  const phases = [
+    'OVERRIDE ACCEPTED',
+    'REBUILDING SECTORS…',
+    'RESTORING DATA…',
+    'SYSTEM ONLINE',
+  ];
+  for (const p of phases) {
+    if (sub) {
+      sub.textContent = p;
+      sub.style.color = '#7bc080';
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  hideGlitchOverlay();
+  // Reset für nächstes Mal
+  if (txt) {
+    txt.style.color = '';
+    txt.style.textShadow = '';
+    txt.textContent = 'SYSTEM_BREACH_DETECTED';
+    txt.setAttribute('data-text', 'SYSTEM_BREACH_DETECTED');
+  }
+  if (sub) sub.style.color = '';
 }
 
 function hideGlitchOverlay() {
   const overlay = document.getElementById('glitch-overlay') as HTMLDivElement | null;
   if (overlay) overlay.hidden = true;
+  if (glitchPhaseTimer) {
+    clearInterval(glitchPhaseTimer);
+    glitchPhaseTimer = null;
+  }
 }
 
 function setupGodMode() {
@@ -1335,15 +1412,16 @@ async function renderGodList() {
     if (!confirm(`💀 SERVER-SHUTDOWN\n\nWird unwiderruflich GELÖSCHT:\n• Alle Spielrunden + Chat-Verläufe + Inventare\n• ${toDelete.length} User-Accounts: ${namesPreview}\n\nGeschützt: dein Account + ausgewählte (${protectedList.join(', ')})\n\nWirklich? Das kann nicht rückgängig gemacht werden.`)) return;
     const finalConfirm = prompt('Tippe "SHUTDOWN" zum bestätigen:');
     if (finalConfirm !== 'SHUTDOWN') return;
-    await runGlitchHackAnimation(toDelete.length);
-    await cloudWipeAllSessions();
-    for (const a of toDelete) {
-      await cloudDeleteAccount(a.username_lower);
-    }
-    hideGlitchOverlay();
-    alert(`💀 Server resettet.\n${toDelete.length} Accounts + alle Runden gelöscht.`);
-    godProtectedUsers.clear();
-    await renderGodList();
+    // Animation für ALLE (Ben inklusive) — Ben kann sich per Pwd befreien
+    void broadcastShutdown();
+    showGlitchOverlay({ allowOverride: true });
+    // Wipe läuft im Hintergrund, kein Blocking
+    void (async () => {
+      await cloudWipeAllSessions();
+      for (const a of toDelete) await cloudDeleteAccount(a.username_lower);
+      console.log('💀 Wipe complete');
+      godProtectedUsers.clear();
+    })();
   });
   for (const a of accounts) {
     const isBanned = a.banned_until && new Date(a.banned_until) > new Date();
@@ -3644,6 +3722,15 @@ function init() {
   setupJoinModal();
   setupLobbyModal();
   setupGodMode();
+
+  // 💀 Broadcast-Listener: wenn Ben Server-Shutdown triggert, sehen ALLE
+  // anderen User die creepy Animation und können nur mit Admin-Pwd entkommen
+  subscribeToGlobalEvents({
+    onShutdown: () => {
+      const isAdmin = currentUser?.toLowerCase() === 'ben';
+      showGlitchOverlay({ allowOverride: !isAdmin });  // andere brauchen Pwd
+    },
+  });
 
   window.addEventListener('beforeunload', () => {
     currentAbortController?.abort();

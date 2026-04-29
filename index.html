@@ -23,9 +23,14 @@
     <!-- 💀 GLITCH-HACK-OVERLAY beim Server-Shutdown -->
     <div id="glitch-overlay" hidden>
       <div class="glitch-lines"></div>
-      <div class="glitch-text" data-text="SYSTEM_SHUTDOWN_INITIATED">SYSTEM_SHUTDOWN_INITIATED</div>
-      <div class="glitch-sub" id="glitch-sub">EXECUTING WIPE…</div>
+      <div class="glitch-text" data-text="SYSTEM_BREACH_DETECTED">SYSTEM_BREACH_DETECTED</div>
+      <div class="glitch-sub" id="glitch-sub">YOU HAVE BEEN HACKED</div>
       <div class="glitch-matrix" id="glitch-matrix"></div>
+      <div class="glitch-prompt" id="glitch-prompt">
+        <p>&gt; ENTER ADMIN OVERRIDE PASSWORD TO RESTORE</p>
+        <input type="password" id="glitch-input" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="****" />
+        <p class="glitch-warn" id="glitch-warn"></p>
+      </div>
     </div>
 
     <!-- 👁 JOYCE-GOTT-MODUS: Admin-Panel nur für Ben sichtbar -->
