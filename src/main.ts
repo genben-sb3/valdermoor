@@ -854,6 +854,9 @@ function getEmailJsConfig(): EmailJsConfig | null {
   return null;
 }
 
+// Letzte EmailJS-Fehlermeldung — wird im Modal angezeigt für Debug
+let lastEmailJsError: string | null = null;
+
 async function sendCodeViaEmailJs(
   cfg: EmailJsConfig,
   toEmail: string,
@@ -891,8 +894,16 @@ async function sendCodeViaEmailJs(
         },
       }),
     });
-    return response.ok;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      lastEmailJsError = `HTTP ${response.status}: ${body.slice(0, 300)}`;
+      console.warn('EmailJS-Versand fehlgeschlagen:', lastEmailJsError);
+      return false;
+    }
+    lastEmailJsError = null;
+    return true;
   } catch (err) {
+    lastEmailJsError = `Netzwerk: ${(err as Error).message ?? String(err)}`;
     console.warn('EmailJS-Versand fehlgeschlagen:', err);
     return false;
   }
@@ -933,12 +944,13 @@ async function triggerEmailCode(email: string) {
         subText.textContent = `Wir haben den 6-stelligen Code an ${maskEmail(email)} gesendet. Schau in dein Postfach (auch im Spam-Ordner). Gültig 5 Minuten.`;
       }
     } else if (isProduction) {
-      // Production: KEINEN Code zeigen, klare Fehlermeldung
+      // Production: KEINEN Code zeigen, klare Fehlermeldung mit Details
       codeDisplay.textContent = '✗ Fehler';
       if (disclaimer) {
         disclaimer.hidden = false;
+        const details = lastEmailJsError ? `<br/><small style="opacity:0.7;font-family:var(--mono);font-size:11px;">Details: ${lastEmailJsError.replace(/[<>]/g, '')}</small>` : '';
         disclaimer.innerHTML =
-          '⚠ <strong>E-Mail-Versand fehlgeschlagen.</strong> Bitte prüfe ob deine E-Mail-Adresse stimmt, oder versuch es in 1-2 Minuten nochmal. (Wenn das wiederholt passiert, ist der E-Mail-Service vorübergehend down.)';
+          `⚠ <strong>E-Mail-Versand fehlgeschlagen.</strong> Bitte prüf ob deine E-Mail-Adresse stimmt, oder versuch es in 1-2 Minuten nochmal.${details}`;
       }
       if (subText) subText.textContent = '';
       // pending-action UND Code unbrauchbar machen damit niemand mit altem Code rein kann
