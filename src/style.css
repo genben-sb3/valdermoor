@@ -210,17 +210,19 @@ button { font-family: var(--font-body); cursor: pointer; }
   gap: 12px;
 }
 .header-controls {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: 10px;
-  overflow-x: auto;
-  flex-wrap: nowrap;
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  flex-wrap: nowrap !important;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 4px;
-  max-width: calc(100% - 200px);
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.header-controls > * { flex-shrink: 0; }
+.header-controls > * { flex-shrink: 0 !important; }
 .header-controls::-webkit-scrollbar { height: 6px; }
 .header-controls::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
 #chat-header h1 { margin: 0; font-size: 26px; }

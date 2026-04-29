@@ -2165,6 +2165,7 @@ function beginAdventure() {
 }
 
 function resumeGame(save: GameSave) {
+  showGodButton();
   ageMode = save.ageMode;
   adventurePrompt = save.adventurePrompt ?? '';
   players = save.players;
@@ -3609,6 +3610,8 @@ function init() {
   const session = getSession();
   if (session && loadAccounts()[session.toLowerCase()]) {
     currentUser = session;
+    showGodButton();
+    startInactivityLock();
     hideLoginScreen();
     const save = loadGame();
     if (save) {
