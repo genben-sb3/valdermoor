@@ -1,4 +1,19 @@
 import './style.css';
+import {
+  playDiceRoll,
+  playItemPickup,
+  playItemLost,
+  playDamage,
+  playHeal,
+  playKnockout,
+  playSend,
+  playDMStart,
+  playDiceRequest,
+  playLoginSuccess,
+  isSoundEnabled,
+  setSoundEnabled,
+  playTestSound,
+} from './sounds';
 
 type PdfJsModule = typeof import('pdfjs-dist');
 let pdfJsCache: PdfJsModule | null = null;
@@ -231,6 +246,23 @@ function stopSpeaking() {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
+}
+
+function setupSoundToggle() {
+  const btn = document.getElementById('sound-toggle-btn') as HTMLButtonElement | null;
+  if (!btn) return;
+  const updateUI = () => {
+    btn.textContent = isSoundEnabled() ? '🔊 Sound' : '🔇 Sound';
+    btn.title = isSoundEnabled()
+      ? 'Sound-Effekte an — klick zum Stummschalten'
+      : 'Sound-Effekte aus — klick zum Anschalten';
+  };
+  updateUI();
+  btn.addEventListener('click', () => {
+    setSoundEnabled(!isSoundEnabled());
+    updateUI();
+    if (isSoundEnabled()) playTestSound();
+  });
 }
 
 function setupVoiceToggle() {
@@ -1015,6 +1047,7 @@ function setupEmailCodeModal() {
 }
 
 function onLoggedIn() {
+  playLoginSuccess();
   hideLoginScreen();
   const save = loadGame();
   if (save) {
@@ -1672,7 +1705,9 @@ async function sendToLMStudio(userText: string, speaker: string) {
 
   messages[0] = { role: 'system', content: buildSystemPrompt() };
 
+  playSend();
   const dmBody = addDMBubble('');
+  playDMStart();
   let fullText = '';
   currentAbortController = new AbortController();
   const signal = currentAbortController.signal;
@@ -1894,6 +1929,7 @@ async function sendToLMStudio(userText: string, speaker: string) {
 // ────────────────────────────────────────────────────────────
 
 function rollDice(sides: number) {
+  playDiceRoll();
   const result = Math.floor(Math.random() * sides) + 1;
   const el = $<HTMLDivElement>('#dice-result');
   el.textContent = `W${sides} → ${result}`;
@@ -1918,6 +1954,7 @@ function pulseDiceButtons(requests: Array<{ sides: number; reason: string }>) {
     btn.classList.add('pulse');
     window.setTimeout(() => btn.classList.remove('pulse'), 3500);
   }
+  if (requests.length > 0) playDiceRequest();
 }
 
 function setupDiceButtons() {
@@ -1949,6 +1986,7 @@ function parseInventory(text: string) {
     changed = true;
   }
   if (changed) {
+    playItemPickup();
     renderInventory();
     window.setTimeout(() => {
       highlightedItems.clear();
@@ -1973,7 +2011,10 @@ function parseInventoryLoss(text: string) {
       console.warn(`[Tag-Parser] Inventar-Verlust für "${name}" — nicht im Inventar.`);
     }
   }
-  if (changed) renderInventory();
+  if (changed) {
+    playItemLost();
+    renderInventory();
+  }
 }
 
 function findPlayerByName(name: string): Player | undefined {
@@ -1989,18 +2030,25 @@ function parseDamage(text: string) {
   const regex = /\[SCHADEN:\s*([^\-\]]+?)\s*-\s*(\d{1,3})\s*\]/gi;
   let match;
   let changed = false;
+  let knockedOut = false;
   while ((match = regex.exec(text)) !== null) {
     const name = match[1].trim();
     const target = findPlayerByName(name);
     const amount = parseInt(match[2], 10);
     if (target && amount > 0) {
+      const wasAlive = target.hp > 0;
       target.hp = Math.max(0, target.hp - amount);
+      if (wasAlive && target.hp === 0) knockedOut = true;
       changed = true;
     } else if (!target) {
       console.warn(`[Tag-Parser] [SCHADEN: ${name}] — kein Held mit diesem Namen, ignoriert.`);
     }
   }
-  if (changed) renderPlayersSidebar();
+  if (changed) {
+    if (knockedOut) playKnockout();
+    else playDamage();
+    renderPlayersSidebar();
+  }
 }
 
 function parseHeal(text: string) {
@@ -2018,7 +2066,10 @@ function parseHeal(text: string) {
       console.warn(`[Tag-Parser] [HEILUNG: ${name}] — kein Held mit diesem Namen, ignoriert.`);
     }
   }
-  if (changed) renderPlayersSidebar();
+  if (changed) {
+    playHeal();
+    renderPlayersSidebar();
+  }
 }
 
 const ALLOWED_DICE = new Set([4, 6, 8, 10, 12, 20, 100]);
@@ -2434,6 +2485,7 @@ function init() {
   setupInputForm();
   setupModelSwitcher();
   setupVoiceToggle();
+  setupSoundToggle();
 
   window.addEventListener('beforeunload', () => {
     currentAbortController?.abort();
