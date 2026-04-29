@@ -1,7 +1,7 @@
 {
   "name": "valdermoor-dm",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Valdermoor — D&D KI-Dungeon-Master",
   "author": "Ben Hofstetter <278487459+genben-sb3@users.noreply.github.com>",
   "type": "module",
@@ -11,9 +11,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "electron .",
-    "electron:build:win": "npm run build && electron-builder --win --publish never",
-    "electron:build:mac": "npm run build && electron-builder --mac --publish never",
-    "electron:build:linux": "npm run build && electron-builder --linux --publish never"
+    "electron:build:win": "npm run build && electron-builder --win --publish always",
+    "electron:build:mac": "npm run build && electron-builder --mac --publish always",
+    "electron:build:linux": "npm run build && electron-builder --linux --publish always"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -22,6 +22,7 @@
     "vite": "^8.0.10"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "pdfjs-dist": "^5.6.205"
   },
   "build": {
@@ -39,7 +40,12 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "artifactName": "Valdermoor-Setup.${ext}",
       "publisherName": "Ben Hofstetter"
@@ -59,7 +65,12 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["universal"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.games",
       "artifactName": "Valdermoor.${ext}",
@@ -67,10 +78,22 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Game",
       "artifactName": "Valdermoor.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "genben-sb3",
+        "repo": "valdermoor"
+      }
+    ]
   }
 }

@@ -55,29 +55,24 @@ jobs:
             release/*.dmg
             release/*.AppImage
 
-      - name: Determine release channel
-        id: channel
+      # electron-builder mit --publish always erstellt automatisch Release +
+      # uploadet alle Files inkl. latest.yml/latest-mac.yml/latest-linux.yml.
+      # Diese werden von electron-updater zur Update-Erkennung verwendet.
+      # Race-condition zwischen den 3 OS-Jobs ist okay — electron-builder
+      # appended zum existierenden Release statt neuem.
+
+      # Post-Build: prerelease-Flag setzen basierend auf Tag-Pattern
+      - name: Set prerelease flag based on tag
+        if: matrix.os == 'ubuntu-latest' && startsWith(github.ref, 'refs/tags/')
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          # v1.x.x oder höher = Stable (Hauptversion)
-          # v0.x.x oder *-beta / *-rc / *-alpha = Beta (Pre-Release)
           if [[ "$TAG" =~ ^v0\. ]] || [[ "$TAG" =~ -(beta|rc|alpha) ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "channel=Beta" >> "$GITHUB_OUTPUT"
+            echo "Marking $TAG as Pre-Release (Beta)"
+            gh release edit "$TAG" --prerelease --title "Valdermoor $TAG (Beta)" || true
           else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "channel=Stable" >> "$GITHUB_OUTPUT"
+            echo "Marking $TAG as Stable"
+            gh release edit "$TAG" --prerelease=false --title "Valdermoor $TAG (Stable)" || true
           fi
         shell: bash
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.exe
-            release/*.dmg
-            release/*.AppImage
-          generate_release_notes: true
-          prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}
-          name: "Valdermoor ${{ github.ref_name }} (${{ steps.channel.outputs.channel }})"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
