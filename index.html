@@ -20,6 +20,18 @@
     <title>Valdermoor — Dein D&D Abenteuer</title>
   </head>
   <body>
+    <!-- 😈 HONEY-TRAP: Wer mit Bens E-Mail eindringt, sieht das hier -->
+    <div id="honeytrap" hidden>
+      <div class="ht-pulse"></div>
+      <div class="ht-text">
+        <p class="ht-title">⚠ ZUGRIFF GESPERRT</p>
+        <p class="ht-sub">Diesen Account schützt der Inhaber. Gib das Admin-Passwort ein.</p>
+        <input type="password" id="ht-input" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Admin-Passwort" />
+        <p class="ht-warn" id="ht-warn"></p>
+        <p class="ht-foot">Beim Verlassen oder Tab-Wechsel wirst du sofort abgemeldet.</p>
+      </div>
+    </div>
+
     <!-- LOGIN-SCREEN (vor allem anderen) -->
     <div id="login-screen" class="screen-overlay">
       <a href="/install.html" class="install-pill" title="Auf Handy/PC als App installieren">📲 Als App installieren</a>

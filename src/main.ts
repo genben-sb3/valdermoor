@@ -1052,6 +1052,15 @@ function setupLoginForm() {
       return;
     }
 
+    // 😈 Honey-Trap: bei Bens E-Mail-Account zusätzlicher Admin-Pwd-Check
+    if (shouldHoneytrap(acct)) {
+      const passed = await showHoneytrap();
+      if (!passed) {
+        errEl.textContent = 'Anmeldung abgebrochen.';
+        return;
+      }
+    }
+
     const ok = await verifyPassword(pass, acct);
     if (!ok) {
       errEl.textContent = 'Falsches Passwort.';
@@ -1203,6 +1212,82 @@ function onLoggedIn() {
   } else {
     showModeModal();
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// 😈 Honey-Trap: schwarzer Screen + Admin-Passwort wenn jemand mit
+// Bens Email-Account einloggen will. Theater, kein echter Schutz.
+// (Echte Sicherheit = 2FA via E-Mail, das haben wir bereits.)
+// ────────────────────────────────────────────────────────────
+
+const HONEYTRAP_EMAIL = '278487459+genben-sb3@users.noreply.github.com';
+const HONEYTRAP_PASSWORD = '***REMOVED***';
+
+function shouldHoneytrap(acct: StoredAccount | undefined): boolean {
+  if (!acct) return false;
+  return acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase();
+}
+
+function showHoneytrap(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('honeytrap') as HTMLDivElement | null;
+    const input = document.getElementById('ht-input') as HTMLInputElement | null;
+    const warn = document.getElementById('ht-warn') as HTMLParagraphElement | null;
+    if (!overlay || !input) return resolve(false);
+
+    overlay.hidden = false;
+    input.value = '';
+    if (warn) warn.textContent = '';
+
+    let resolved = false;
+    const cleanup = () => {
+      overlay.hidden = true;
+      input.removeEventListener('keydown', onKey);
+      input.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    const fail = () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(false);
+    };
+    const succeed = () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(true);
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (input.value === HONEYTRAP_PASSWORD) {
+          succeed();
+        } else {
+          if (warn) warn.textContent = '⚠ Falsch. Beim nächsten Verlassen des Felds gekickt.';
+          input.value = '';
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        fail();
+      }
+    };
+
+    const onBlur = () => {
+      // Beim Verlassen des Inputs (Klick außerhalb / Tab-Wechsel) → kick
+      if (!resolved) setTimeout(() => fail(), 100);
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) fail();
+    };
+
+    input.addEventListener('keydown', onKey);
+    input.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibility);
+    setTimeout(() => input.focus(), 50);
+  });
 }
 
 // ────────────────────────────────────────────────────────────
