@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, dialog, Notification } = require('electron');
+const { app, BrowserWindow, shell, dialog, Notification, session } = require('electron');
 const path = require('node:path');
 
 const isDev = process.env.ELECTRON_DEV === '1' || !app.isPackaged;
@@ -48,6 +48,24 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // EmailJS / Pollinations / Groq prüfen Origin-Header server-side.
+  // file:// gibt Origin: null → wird abgelehnt. Wir täuschen einen
+  // gültigen Browser-Origin vor damit alle externen APIs funktionieren.
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const url = details.url || '';
+    if (
+      url.includes('api.emailjs.com') ||
+      url.includes('text.pollinations.ai') ||
+      url.includes('image.pollinations.ai') ||
+      url.includes('api.groq.com') ||
+      url.includes('supabase.co')
+    ) {
+      details.requestHeaders['Origin'] = 'https://valdermoor.vercel.app';
+      details.requestHeaders['Referer'] = 'https://valdermoor.vercel.app/';
+    }
+    callback({ requestHeaders: details.requestHeaders });
+  });
+
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
