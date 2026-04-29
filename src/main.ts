@@ -2415,6 +2415,9 @@ function setupInputForm() {
 
   const exportBtn = document.getElementById('export-btn') as HTMLButtonElement | null;
   exportBtn?.addEventListener('click', exportAdventure);
+
+  const pdfBtn = document.getElementById('pdf-btn') as HTMLButtonElement | null;
+  pdfBtn?.addEventListener('click', printAdventureAsPdf);
 }
 
 function exportAdventure() {
@@ -2472,6 +2475,102 @@ function exportAdventure() {
 }
 
 // ────────────────────────────────────────────────────────────
+// PDF-Export — via window.print() + dynamisch gerendertes Print-Layout
+// ────────────────────────────────────────────────────────────
+
+function printAdventureAsPdf() {
+  if (players.length === 0) {
+    alert('Es gibt noch nichts zu exportieren — fang erst eine Runde an.');
+    return;
+  }
+
+  // Print-Container bauen (wird nur beim Drucken sichtbar via @media print)
+  const oldPrintArea = document.getElementById('print-area');
+  if (oldPrintArea) oldPrintArea.remove();
+
+  const printArea = document.createElement('div');
+  printArea.id = 'print-area';
+  printArea.innerHTML = `
+    <div class="print-header">
+      <h1>⚔ VALDERMOOR</h1>
+      <p class="print-meta">
+        ${new Date().toLocaleDateString('de-DE', { year: 'numeric', month: 'long', day: 'numeric' })}
+        · Modus: ${ageMode}
+        ${adventurePrompt.trim() ? ` · Thema: ${escapeHtml(adventurePrompt.trim())}` : ''}
+      </p>
+    </div>
+
+    <h2>Helden</h2>
+    <div class="print-heroes">
+      ${players.map((p) => `
+        <div class="print-hero">
+          <div class="print-hero-head">
+            <span class="print-hero-name">${classEmoji(p.class)} ${escapeHtml(p.name)}</span>
+            <span class="print-hero-class">${escapeHtml(p.class)}</span>
+          </div>
+          <div class="print-hp">HP: ${p.hp} / ${p.maxHp}${p.hp === 0 ? ' — BEWUSSTLOS' : ''}</div>
+          <table class="print-stats">
+            <tr>
+              ${STAT_KEYS.map((k) => `<th>${k}</th>`).join('')}
+            </tr>
+            <tr>
+              ${STAT_KEYS.map((k) => `<td>${p.stats[k]}</td>`).join('')}
+            </tr>
+          </table>
+        </div>
+      `).join('')}
+    </div>
+
+    <h2>Inventar</h2>
+    ${inventory.length === 0
+      ? '<p class="print-empty">Inventar ist leer.</p>'
+      : `<ul class="print-inventory">${inventory.map((i) =>
+          `<li>${escapeHtml(i.name)}${i.quantity > 1 ? ` <span class="qty">×${i.quantity}</span>` : ''}</li>`,
+        ).join('')}</ul>`
+    }
+
+    <h2>Abenteuer-Verlauf</h2>
+    <div class="print-story">
+      ${messages.slice(1).map((m) => {
+        if (m.role === 'user' && m.speaker === 'Erzähler' && m.content.startsWith('[ERZÄHLER]:')) {
+          const text = m.content.replace(/^\[ERZÄHLER\]:\s*/, '');
+          return `<div class="print-narrator"><strong>🎭 Erzähler:</strong> <em>${escapeHtml(text)}</em></div>`;
+        }
+        if (m.role === 'user' && m.speaker && m.speaker !== 'Erzähler') {
+          const speaker = m.speaker;
+          const prefix = speaker + ':';
+          const text = m.content.startsWith(prefix) ? m.content.slice(prefix.length).trim() : m.content;
+          const p = players.find((x) => x.name === speaker);
+          return `<div class="print-player">
+            <strong>${p ? classEmoji(p.class) : '⚔'} ${escapeHtml(speaker)}:</strong> ${escapeHtml(text)}
+          </div>`;
+        }
+        if (m.role === 'assistant') {
+          return `<div class="print-dm">
+            <strong>🧙 Dungeon Master:</strong> ${escapeHtml(stripGameTags(m.content))}
+          </div>`;
+        }
+        return '';
+      }).join('')}
+    </div>
+
+    <div class="print-footer">
+      <p>Generiert mit <strong>Valdermoor</strong> — valdermoor.vercel.app</p>
+      <p>Spieler: ${currentUser ?? 'unbekannt'}</p>
+    </div>
+  `;
+  document.body.appendChild(printArea);
+
+  // Browser-Druckdialog öffnen — User wählt "Als PDF speichern"
+  // Tipp im Modal vor dem Druck
+  setTimeout(() => {
+    window.print();
+    // Cleanup nach dem Druck
+    setTimeout(() => printArea.remove(), 1000);
+  }, 100);
+}
+
+// ────────────────────────────────────────────────────────────
 // Init
 // ────────────────────────────────────────────────────────────
 
@@ -2491,6 +2590,16 @@ function init() {
     currentAbortController?.abort();
     saveGame();
   });
+
+  // Service Worker registrieren — App offline-fähig + schneller Start
+  // Nur in Production (sonst kollidiert mit Vite-HMR)
+  if ('serviceWorker' in navigator && !import.meta.env.DEV) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('Service Worker Registration fehlgeschlagen:', err);
+      });
+    });
+  }
 
   window.addEventListener('online', () => {
     if (lmProvider !== 'local') {
