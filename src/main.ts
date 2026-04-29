@@ -1596,9 +1596,10 @@ async function onCharsReady() {
       });
       mpSession = session;
       mpIsHost = true;
-      // Host's Helden in Supabase persistieren
+      // Host's Helden in Supabase persistieren — Supabase generiert UUIDs,
+      // wir updaten die lokalen p.id mit den zurückgekommenen UUIDs
       for (const p of players) {
-        await mpAddPlayer({
+        const created = await mpAddPlayer({
           id: p.id,
           session_id: session.id,
           user_name: currentUser ?? 'Host',
@@ -1609,7 +1610,9 @@ async function onCharsReady() {
           stats: p.stats,
           color: p.color,
         });
+        p.id = created.id;  // lokale ID = Supabase-UUID damit Realtime-Sync matched
       }
+      activePlayerId = players[0]?.id ?? '';
       // Realtime starten + Lobby öffnen
       attachMultiplayerSubscription();
       hideCharModal();
@@ -1635,9 +1638,9 @@ async function onCharsReady() {
       return;
     }
     try {
-      // Helden in Supabase speichern
+      // Helden in Supabase speichern + lokale IDs auf Supabase-UUIDs updaten
       for (const p of players) {
-        await mpAddPlayer({
+        const created = await mpAddPlayer({
           id: p.id,
           session_id: mpSession.id,
           user_name: currentUser ?? 'Guest',
@@ -1648,7 +1651,9 @@ async function onCharsReady() {
           stats: p.stats,
           color: p.color,
         });
+        p.id = created.id;
       }
+      activePlayerId = players[0]?.id ?? '';
       // Andere Spieler + Inventar + History laden
       const otherPlayers = await mpListPlayers(mpSession.id);
       for (const other of otherPlayers) {

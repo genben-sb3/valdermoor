@@ -128,21 +128,24 @@ export async function closeSession(sessionId: string): Promise<void> {
 
 // ─── Players ─────────────────────────────────────────────────
 
-export async function addPlayer(player: Omit<MpPlayer, 'joined_at'>): Promise<MpPlayer> {
+export async function addPlayer(player: Omit<MpPlayer, 'joined_at' | 'id'> & { id?: string }): Promise<MpPlayer> {
   const supa = getClient();
+  // Wenn p.id ein echter UUID ist, nutze ihn; sonst lass Supabase einen generieren
+  const isUuid = !!player.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(player.id);
+  const insertData: Record<string, unknown> = {
+    session_id: player.session_id,
+    user_name: player.user_name,
+    player_name: player.player_name,
+    player_class: player.player_class,
+    hp: player.hp,
+    max_hp: player.max_hp,
+    stats: player.stats,
+    color: player.color,
+  };
+  if (isUuid) insertData.id = player.id;
   const { data, error } = await supa
     .from('session_players')
-    .insert({
-      id: player.id,
-      session_id: player.session_id,
-      user_name: player.user_name,
-      player_name: player.player_name,
-      player_class: player.player_class,
-      hp: player.hp,
-      max_hp: player.max_hp,
-      stats: player.stats,
-      color: player.color,
-    })
+    .insert(insertData)
     .select()
     .single();
   if (error) throw error;
