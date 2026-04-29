@@ -1,7 +1,7 @@
 {
   "name": "valdermoor-dm",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Valdermoor — D&D KI-Dungeon-Master",
   "author": "Ben Hofstetter <278487459+genben-sb3@users.noreply.github.com>",
   "type": "module",
@@ -39,18 +39,23 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        { "target": "nsis", "arch": ["x64"] }
       ],
-      "artifactName": "Valdermoor-Setup.${ext}"
+      "artifactName": "Valdermoor-Setup.${ext}",
+      "publisherName": "Ben Hofstetter"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
+      "menuCategory": "Spiele",
       "shortcutName": "Valdermoor",
-      "uninstallDisplayName": "Valdermoor"
+      "uninstallDisplayName": "Valdermoor",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false
     },
     "mac": {
       "target": [

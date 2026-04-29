@@ -334,6 +334,89 @@
         font-style: italic;
         margin-left: 6px;
       }
+      .smartscreen-warning, .post-install-help {
+        max-width: 760px;
+        margin: 24px auto 0;
+        padding: 18px 24px;
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        border-radius: 12px;
+        position: relative;
+        z-index: 1;
+        animation: fade-up 0.6s cubic-bezier(0.16, 0.84, 0.32, 1.0) both;
+      }
+      .smartscreen-warning {
+        background: linear-gradient(180deg, #2a1f10 0%, #1a1410 100%);
+        border: 2px solid #d4a04a;
+        box-shadow: 0 0 0 1px rgba(212, 160, 74, 0.3);
+      }
+      .post-install-help {
+        background: linear-gradient(180deg, #14211a 0%, #0e1814 100%);
+        border: 2px solid #4a8a6a;
+        box-shadow: 0 0 0 1px rgba(74, 138, 106, 0.3);
+      }
+      .ssw-icon, .pih-icon {
+        font-size: 36px;
+        line-height: 1;
+        flex-shrink: 0;
+        margin-top: 4px;
+      }
+      .ssw-body, .pih-body { flex: 1; }
+      .ssw-body h3 {
+        margin: 0 0 8px;
+        font-family: var(--font-heading);
+        color: #e9c66b;
+        font-size: 16px;
+        letter-spacing: 0.06em;
+      }
+      .pih-body h3 {
+        margin: 0 0 8px;
+        font-family: var(--font-heading);
+        color: #7bc080;
+        font-size: 16px;
+        letter-spacing: 0.06em;
+      }
+      .ssw-body p, .pih-body p {
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 6px 0;
+      }
+      .ssw-steps {
+        margin: 10px 0 6px 22px;
+        padding: 0;
+      }
+      .ssw-steps li {
+        margin: 8px 0;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .ssw-steps strong {
+        color: #e9c66b;
+      }
+      .pih-list {
+        margin: 6px 0 6px 22px;
+        padding: 0;
+      }
+      .pih-list li {
+        margin: 6px 0;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .pih-body strong {
+        color: #b6e6c2;
+      }
+      .ssw-note {
+        margin-top: 12px !important;
+        padding-top: 10px;
+        border-top: 1px solid rgba(212, 160, 74, 0.3);
+        font-style: italic;
+        color: var(--text-dim);
+      }
+
       .ch-warning {
         background: linear-gradient(180deg, #2a1f10 0%, #1a1410 100%);
         border: 1px solid var(--gold);
@@ -411,6 +494,36 @@
         <span class="arrow">→</span>
       </button>
       <p class="download-meta" id="primary-meta"></p>
+    </section>
+
+    <!-- Smart-Screen-Warnung: wird nur für Windows/Mac angezeigt -->
+    <section class="smartscreen-warning" id="smartscreen-warning" style="display:none;">
+      <div class="ssw-icon">⚠️</div>
+      <div class="ssw-body">
+        <h3>Wichtig: Sicherheits-Warnung beim Start</h3>
+        <p>Beim ersten Doppelklick auf die heruntergeladene Datei zeigt dein System eine <strong>blaue Warnung</strong>. Das ist <strong>NORMAL</strong> — die App ist nicht "code-signed" (Code-Signing kostet ~€100/Jahr). Du musst zwei Klicks machen:</p>
+        <ol class="ssw-steps">
+          <li><strong>Windows</strong>: Klicke auf "<strong>Weitere Informationen</strong>" *(steht klein, leicht zu übersehen)* → Button "<strong>Trotzdem ausführen</strong>" erscheint → klicken.</li>
+          <li><strong>macOS</strong>: Rechtsklick auf die Valdermoor.app → "<strong>Öffnen</strong>" → bestätigen mit "<strong>Öffnen</strong>".</li>
+        </ol>
+        <p class="ssw-note">Danach öffnet sich der Installer ganz normal. Diese Warnung kommt nur <strong>einmal</strong>, beim ersten Mal.</p>
+      </div>
+    </section>
+
+    <section class="post-install-help" id="post-install-help" style="display:none;">
+      <div class="pih-icon">📍</div>
+      <div class="pih-body">
+        <h3>Wie finde ich die App nach der Installation?</h3>
+        <p><strong>Windows:</strong></p>
+        <ul class="pih-list">
+          <li><strong>Desktop-Icon</strong> — Valdermoor sollte direkt auf dem Desktop erscheinen.</li>
+          <li><strong>Start-Menü</strong> — Windows-Taste drücken, "<strong>Valdermoor</strong>" tippen → erscheint nach 1-2 Sekunden in der Suche.</li>
+          <li>Falls in der Suche nichts kommt: Start-Menü → <strong>Alle Apps</strong> → unter "V" suchen oder unter <strong>Spiele</strong>.</li>
+          <li>Wenn die App nach 5 Min noch nicht in der Suche ist: Windows indexiert manchmal verzögert. Einmal neu starten hilft fast immer.</li>
+        </ul>
+        <p style="margin-top: 10px;"><strong>macOS:</strong> In <strong>Programme</strong> (Applications) drag-droppen aus dem .dmg → dann via <strong>Launchpad</strong> oder <strong>Spotlight</strong> (⌘+Space) "Valdermoor" tippen.</p>
+        <p style="margin-top: 10px;"><strong>Linux:</strong> .AppImage doppelklicken — kein Install nötig, läuft direkt. Wenn nicht: Rechtsklick → <strong>Eigenschaften</strong> → Tab <strong>Berechtigungen</strong> → "Datei als Programm ausführen erlauben" anhaken.</p>
+      </div>
     </section>
 
     <section class="others">
@@ -576,6 +689,15 @@
       const btn  = document.getElementById('primary-btn');
       const pwaBtn = document.getElementById('pwa-install-btn');
       const meta = document.getElementById('primary-meta');
+
+      // Smart-Screen-Warnung + Post-Install-Hilfe nur für Desktop-Plattformen
+      const isDesktop = ['windows', 'mac', 'linux'].includes(platform);
+      if (isDesktop) {
+        const ssw = document.getElementById('smartscreen-warning');
+        const pih = document.getElementById('post-install-help');
+        if (ssw) ssw.style.display = 'flex';
+        if (pih) pih.style.display = 'flex';
+      }
 
       if (info.pwa) {
         // Mobile: PWA-Install-Knopf zeigen (oder Anleitung)
