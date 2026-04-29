@@ -67,6 +67,71 @@ export interface MpMessage {
   created_at: string;
 }
 
+// ─── Cloud-Account-Sync ──────────────────────────────────────
+// Account-Daten in Supabase persistiert damit User auf jedem Gerät einloggen kann.
+// PBKDF2-Hash bleibt one-way, public-read der Hashes ist OK.
+
+export interface CloudAccount {
+  username_lower: string;
+  username: string;
+  email: string;
+  password_hash: string;
+  password_salt: string;
+  password_algo: string;
+  created_at: string;
+}
+
+export async function cloudGetAccount(usernameLower: string): Promise<CloudAccount | null> {
+  if (!isMultiplayerAvailable()) return null;
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('accounts')
+    .select('*')
+    .eq('username_lower', usernameLower)
+    .maybeSingle();
+  if (error) {
+    console.warn('cloudGetAccount fehlgeschlagen:', error.message);
+    return null;
+  }
+  return (data as CloudAccount | null) ?? null;
+}
+
+export async function cloudPutAccount(acct: {
+  username: string;
+  email: string;
+  passwordHash: string;
+  passwordSalt: string;
+  passwordAlgo: string;
+}): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa.from('accounts').upsert({
+    username_lower: acct.username.toLowerCase(),
+    username: acct.username,
+    email: acct.email,
+    password_hash: acct.passwordHash,
+    password_salt: acct.passwordSalt,
+    password_algo: acct.passwordAlgo,
+  });
+  if (error) {
+    console.warn('cloudPutAccount fehlgeschlagen:', error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function cloudFindAccountByEmail(email: string): Promise<CloudAccount | null> {
+  if (!isMultiplayerAvailable()) return null;
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('accounts')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle();
+  if (error) return null;
+  return (data as CloudAccount | null) ?? null;
+}
+
 // ─── Code-Generator ──────────────────────────────────────────
 // 4 Hex-Chars, leicht teilbar mit Freunden ("VALDR-7B3F")
 
@@ -286,6 +351,7 @@ export function subscribeToSession(
     onPlayerChange?: (player: MpPlayer, type: 'INSERT' | 'UPDATE' | 'DELETE') => void;
     onInventoryChange?: (item: MpInventoryItem | { session_id: string; item_name: string }, type: 'INSERT' | 'UPDATE' | 'DELETE') => void;
     onSessionClose?: () => void;
+    onConnectionChange?: (state: 'connected' | 'disconnected' | 'reconnecting') => void;
   },
 ): SessionSubscription {
   const supa = getClient();
@@ -320,7 +386,11 @@ export function subscribeToSession(
         if (newRow.closed_at) handlers.onSessionClose?.();
       },
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') handlers.onConnectionChange?.('connected');
+      else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') handlers.onConnectionChange?.('disconnected');
+      else if (status === 'TIMED_OUT') handlers.onConnectionChange?.('reconnecting');
+    });
 
   return {
     unsubscribe: () => {

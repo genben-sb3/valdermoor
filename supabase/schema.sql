@@ -10,6 +10,22 @@
 -- Extension für gen_random_uuid() (auf Supabase normalerweise schon da)
 create extension if not exists pgcrypto;
 
+-- ─── User-Accounts (Cloud-Sync, ersetzt nicht die EmailJS-2FA) ───────────
+-- Login funktioniert auf jedem Gerät mit gleichem Username + Passwort.
+-- PBKDF2-Hash + Salt werden hier gespeichert (one-way, kein Reverse möglich).
+create table if not exists public.accounts (
+  username_lower text primary key,
+  username text not null,
+  email text not null,
+  password_hash text not null,
+  password_salt text not null,
+  password_algo text not null default 'pbkdf2-v2',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_accounts_email on public.accounts(email);
+
+alter table public.accounts enable row level security;
+
 -- ─── Spielrunden / Sessions ────────────────────────────────
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
@@ -75,7 +91,7 @@ begin
     select policyname, schemaname || '.' || tablename as full_table
     from pg_policies
     where schemaname = 'public'
-      and tablename in ('sessions', 'session_players', 'session_inventory', 'session_messages')
+      and tablename in ('sessions', 'session_players', 'session_inventory', 'session_messages', 'accounts')
   loop
     execute format('drop policy if exists %I on %s', r.policyname, r.full_table);
   end loop;
@@ -88,6 +104,9 @@ create policy "anon_all_players" on public.session_players
 create policy "anon_all_inventory" on public.session_inventory
   for all using (true) with check (true);
 create policy "anon_all_messages" on public.session_messages
+  for all using (true) with check (true);
+
+create policy "anon_all_accounts" on public.accounts
   for all using (true) with check (true);
 
 -- ════════════════════════════════════════════════════════════

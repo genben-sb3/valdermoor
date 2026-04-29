@@ -14,6 +14,9 @@ import {
   addMessage as mpAddMessage,
   listMessages as mpListMessages,
   subscribeToSession,
+  cloudGetAccount,
+  cloudPutAccount,
+  cloudFindAccountByEmail,
   type MpSession,
   type MpPlayer as _MpPlayer,
   type MpMessage,
@@ -496,7 +499,18 @@ const $$ = <T extends HTMLElement>(sel: string, root: Document | HTMLElement = d
   Array.from(root.querySelectorAll(sel)) as T[];
 
 function uid(): string {
-  return Math.random().toString(36).slice(2, 10);
+  // Echter UUID v4 — kompatibel mit Supabase uuid-Spalten und mit
+  // localStorage-Save (UUIDs sind valid strings). Fallback für sehr
+  // alte Browser ohne crypto.randomUUID.
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Polyfill: simple v4-style string
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1012,7 +1026,27 @@ function setupLoginForm() {
     }
 
     const accounts = loadAccounts();
-    const acct = accounts[user.toLowerCase()];
+    let acct: StoredAccount | undefined = accounts[user.toLowerCase()];
+
+    // Wenn lokal nicht da: Cloud probieren
+    if (!acct) {
+      try {
+        const cloud = await cloudGetAccount(user.toLowerCase());
+        if (cloud) {
+          acct = {
+            username: cloud.username,
+            email: cloud.email,
+            passwordHash: cloud.password_hash,
+            passwordSalt: cloud.password_salt,
+            passwordAlgo: (cloud.password_algo as PasswordAlgo) ?? 'pbkdf2-v2',
+            created: Date.now(),
+          };
+          // Cache lokal
+          saveAccount(acct);
+        }
+      } catch { /* */ }
+    }
+
     if (!acct) {
       errEl.textContent = 'Benutzer nicht gefunden.';
       return;
@@ -1060,6 +1094,15 @@ function setupRegisterForm() {
       errEl.textContent = 'Benutzername existiert schon — wähl einen anderen.';
       return;
     }
+    // Cloud-Check: Username auch dort
+    try {
+      const cloudUser = await cloudGetAccount(user.toLowerCase());
+      if (cloudUser) {
+        errEl.textContent = 'Benutzername existiert schon (auf einem anderen Gerät) — wähl einen anderen.';
+        return;
+      }
+    } catch { /* */ }
+
     const emailLower = email.toLowerCase();
     const emailTaken = Object.values(accounts).some(
       (a) => a.email.toLowerCase() === emailLower,
@@ -1068,6 +1111,14 @@ function setupRegisterForm() {
       errEl.textContent = 'Diese E-Mail ist schon registriert. Geh auf "Anmelden".';
       return;
     }
+    // Cloud-Email-Check
+    try {
+      const cloudByEmail = await cloudFindAccountByEmail(email);
+      if (cloudByEmail) {
+        errEl.textContent = 'Diese E-Mail ist schon registriert (auf einem anderen Gerät). Geh auf "Anmelden".';
+        return;
+      }
+    } catch { /* */ }
 
     pendingAction = { kind: 'register', username: user, email, password: pass };
     await triggerEmailCode(email);
@@ -1114,13 +1165,22 @@ function setupEmailCodeModal() {
     if (pendingAction.kind === 'register') {
       const salt = generateSalt();
       const passwordHash = await hashPasswordPBKDF2(pendingAction.password, salt);
-      saveAccount({
+      const acctData = {
+        username: pendingAction.username,
+        email: pendingAction.email,
+        passwordHash,
+        passwordSalt: salt,
+        passwordAlgo: 'pbkdf2-v2' as PasswordAlgo,
+        created: Date.now(),
+      };
+      saveAccount(acctData);
+      // Cloud-Sync: Account auch in Supabase damit User auf jedem Gerät einloggen kann
+      void cloudPutAccount({
         username: pendingAction.username,
         email: pendingAction.email,
         passwordHash,
         passwordSalt: salt,
         passwordAlgo: 'pbkdf2-v2',
-        created: Date.now(),
       });
       setSession(pendingAction.username);
     } else {
@@ -1698,8 +1758,26 @@ function attachMultiplayerSubscription() {
       addErrorBubble('⚠ Der Host hat die Runde beendet. Das Spiel ist vorbei.');
       cleanupMultiplayer();
     },
+    onConnectionChange: (state) => updateConnectionIndicator(state),
   });
   updateMultiplayerIndicator();
+}
+
+function updateConnectionIndicator(state: 'connected' | 'disconnected' | 'reconnecting') {
+  const ind = document.getElementById('mp-indicator');
+  if (!ind) return;
+  ind.classList.toggle('mp-disconnected', state !== 'connected');
+  const dot = ind.querySelector('.mp-dot') as HTMLElement | null;
+  if (dot) {
+    if (state === 'disconnected') dot.style.background = '#b84848';
+    else if (state === 'reconnecting') dot.style.background = '#e6b422';
+    else dot.style.background = '#7bc080';
+  }
+  if (state === 'disconnected') {
+    setStatus('MP-Verbindung verloren — versuche reconnect…', 'error');
+  } else if (state === 'connected') {
+    setStatus(`Multiplayer · ${mpSession?.code ?? ''}`, 'ok');
+  }
 }
 
 function updateMultiplayerIndicator() {

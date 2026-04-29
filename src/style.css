@@ -1423,6 +1423,14 @@ body::before {
   background: linear-gradient(180deg, #1a3020, #14211a);
   border-color: #7bc080;
 }
+.mp-indicator.mp-disconnected {
+  border-color: #b84848;
+  animation: mp-disc-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mp-disc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 .mp-indicator.copied::after {
   content: " ✓ kopiert";
   color: #7bc080;
