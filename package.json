@@ -1,7 +1,7 @@
 {
   "name": "valdermoor-dm",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Valdermoor — D&D KI-Dungeon-Master",
   "author": "Ben Hofstetter <278487459+genben-sb3@users.noreply.github.com>",
   "type": "module",
