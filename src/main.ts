@@ -1311,13 +1311,6 @@ function showGlitchOverlay(opts: { allowOverride: boolean }) {
   }
 }
 
-// Initiator-Animation: Ben sieht dieselbe creepy Animation,
-// kann sich aber selbst per Pwd befreien (ohne wipe abzubrechen)
-async function runGlitchHackAnimation(_victimCount: number): Promise<void> {
-  showGlitchOverlay({ allowOverride: true });
-  // Wipe läuft im Hintergrund weiter, Ben kann jederzeit ***REMOVED*** tippen
-}
-
 async function runRestoreAnimation(): Promise<void> {
   const overlay = document.getElementById('glitch-overlay') as HTMLDivElement | null;
   const sub = document.getElementById('glitch-sub') as HTMLDivElement | null;
