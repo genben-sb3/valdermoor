@@ -1,3 +1,6 @@
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+
 import './style.css';
 import {
   playDiceRoll,
@@ -2637,6 +2640,75 @@ function printAdventureAsPdf() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Update-Check — bei Start prüfen ob neue Version auf GitHub
+// ────────────────────────────────────────────────────────────
+
+const UPDATE_DISMISSED_KEY = 'valdermoor:updateDismissed';
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const ai = pa[i] ?? 0;
+    const bi = pb[i] ?? 0;
+    if (ai !== bi) return ai - bi;
+  }
+  return 0;
+}
+
+async function checkForUpdates() {
+  // Im Dev-Modus skippen
+  if (import.meta.env.DEV) return;
+  if (APP_VERSION === 'dev') return;
+
+  try {
+    const res = await fetch('https://api.github.com/repos/genben-sb3/valdermoor/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) return;
+    const data = await res.json() as { tag_name?: string; html_url?: string; name?: string };
+    const latestTag = (data.tag_name ?? '').replace(/^v/, '');
+    if (!latestTag) return;
+
+    if (compareVersions(latestTag, APP_VERSION) > 0) {
+      // User hat diese Version vielleicht schon weggeklickt
+      const dismissedFor = localStorage.getItem(UPDATE_DISMISSED_KEY);
+      if (dismissedFor === latestTag) return;
+      showUpdateBanner(latestTag, data.html_url ?? 'https://github.com/genben-sb3/valdermoor/releases/latest');
+    }
+  } catch {
+    // Netzwerk-Fehler oder Rate-Limit → still ignorieren
+  }
+}
+
+function showUpdateBanner(newVersion: string, releaseUrl: string) {
+  // Doppelte Banner verhindern
+  if (document.getElementById('update-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.className = 'update-banner';
+  banner.innerHTML = `
+    <span class="ub-icon">🔔</span>
+    <div class="ub-text">
+      <strong>Neue Version v${newVersion}</strong> verfügbar
+      <span class="ub-current">(du hast v${APP_VERSION})</span>
+    </div>
+    <a class="ub-btn" href="/install.html" target="_blank" rel="noopener">📥 Update holen</a>
+    <a class="ub-btn-secondary" href="${releaseUrl}" target="_blank" rel="noopener" title="Was ist neu? Release-Notes auf GitHub">📖 Was ist neu</a>
+    <button type="button" class="ub-close" title="Bis zur nächsten Version verstecken">✕</button>
+  `;
+
+  banner.querySelector('.ub-close')?.addEventListener('click', () => {
+    try { localStorage.setItem(UPDATE_DISMISSED_KEY, newVersion); } catch { /* */ }
+    banner.classList.add('ub-hide');
+    setTimeout(() => banner.remove(), 300);
+  });
+
+  document.body.appendChild(banner);
+}
+
+// ────────────────────────────────────────────────────────────
 // Init
 // ────────────────────────────────────────────────────────────
 
@@ -2718,4 +2790,8 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  // Update-Check 3 Sek nach Start (nicht beim ersten Render)
+  window.setTimeout(() => void checkForUpdates(), 3000);
+});

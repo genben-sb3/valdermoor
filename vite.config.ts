@@ -1,8 +1,11 @@
 import { defineConfig, type Plugin } from 'vite';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+
+// Version aus package.json zur Build-Zeit injizieren
+const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 
 const LM_HEALTH_URL = 'http://localhost:1234/v1/models';
 const LLAMA_BAT = 'C:\\llama\\start-server.bat';
@@ -114,6 +117,9 @@ export default defineConfig({
   // in Electron (file://) funktioniert. Ohne './' generiert Vite absolute
   // Pfade die in file:// auf C:\assets\... zeigen → 404.
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [lmAutoStartPlugin()],
   server: {
     proxy: {
