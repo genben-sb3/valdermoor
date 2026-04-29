@@ -150,6 +150,23 @@ export async function cloudBanUser(usernameLower: string, until: Date | null, re
   return true;
 }
 
+export async function cloudDeleteAccount(usernameLower: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa.from('accounts').delete().eq('username_lower', usernameLower);
+  if (error) { console.warn('cloudDeleteAccount:', error.message); return false; }
+  return true;
+}
+
+export async function cloudWipeAllSessions(): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  // CASCADE löscht players + inventory + messages
+  const { error } = await supa.from('sessions').delete().not('id', 'is', null);
+  if (error) { console.warn('cloudWipeAllSessions:', error.message); return false; }
+  return true;
+}
+
 export async function cloudFindAccountByEmail(email: string): Promise<CloudAccount | null> {
   if (!isMultiplayerAvailable()) return null;
   const supa = getClient();

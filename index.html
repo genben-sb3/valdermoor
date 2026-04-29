@@ -20,6 +20,14 @@
     <title>Valdermoor — Dein D&D Abenteuer</title>
   </head>
   <body>
+    <!-- 💀 GLITCH-HACK-OVERLAY beim Server-Shutdown -->
+    <div id="glitch-overlay" hidden>
+      <div class="glitch-lines"></div>
+      <div class="glitch-text" data-text="SYSTEM_SHUTDOWN_INITIATED">SYSTEM_SHUTDOWN_INITIATED</div>
+      <div class="glitch-sub" id="glitch-sub">EXECUTING WIPE…</div>
+      <div class="glitch-matrix" id="glitch-matrix"></div>
+    </div>
+
     <!-- 👁 JOYCE-GOTT-MODUS: Admin-Panel nur für Ben sichtbar -->
     <button type="button" id="god-btn" hidden title="Joyce-Gott-Modus öffnen">👁 GOTT</button>
     <div id="god-modal" class="modal-overlay" hidden>

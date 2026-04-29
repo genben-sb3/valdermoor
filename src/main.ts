@@ -19,6 +19,8 @@ import {
   cloudFindAccountByEmail,
   cloudListAccounts,
   cloudBanUser,
+  cloudDeleteAccount,
+  cloudWipeAllSessions,
   type MpSession,
   type MpPlayer as _MpPlayer,
   type MpMessage,
@@ -1241,6 +1243,50 @@ function isGodUser(): boolean {
   return currentUser?.toLowerCase() === 'ben';
 }
 
+// 💀 Glitch-Hack-Animation vor Server-Shutdown
+async function runGlitchHackAnimation(victimCount: number): Promise<void> {
+  const overlay = document.getElementById('glitch-overlay') as HTMLDivElement | null;
+  const sub = document.getElementById('glitch-sub') as HTMLDivElement | null;
+  const matrix = document.getElementById('glitch-matrix') as HTMLDivElement | null;
+  if (!overlay) return;
+  overlay.hidden = false;
+
+  // Matrix-Style Background-Text
+  if (matrix) {
+    const chars = '01';
+    const lines: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      let line = '';
+      for (let j = 0; j < 80; j++) line += chars[Math.floor(Math.random() * chars.length)];
+      lines.push(line);
+    }
+    matrix.textContent = lines.join('\n');
+  }
+
+  // Sub-Text durchwechseln
+  const phases = [
+    'INITIALIZING WIPE…',
+    `BREACHING ${victimCount} ACCOUNTS…`,
+    'CORRUPTING DATA…',
+    'OVERWRITING SECTORS…',
+    'BYPASSING SECURITY…',
+    'EXECUTING TERMINATION…',
+  ];
+  for (let i = 0; i < phases.length; i++) {
+    if (sub) sub.textContent = phases[i];
+    await new Promise((r) => setTimeout(r, 350));
+  }
+
+  // Letzte 500ms: Standby vor dem echten Wipe
+  if (sub) sub.textContent = '⚠ DELETING ⚠';
+  await new Promise((r) => setTimeout(r, 500));
+}
+
+function hideGlitchOverlay() {
+  const overlay = document.getElementById('glitch-overlay') as HTMLDivElement | null;
+  if (overlay) overlay.hidden = true;
+}
+
 function setupGodMode() {
   const btn = document.getElementById('god-btn') as HTMLButtonElement | null;
   const modal = document.getElementById('god-modal') as HTMLDivElement | null;
@@ -1260,6 +1306,8 @@ function showGodButton() {
   if (btn) btn.hidden = !isGodUser();
 }
 
+const godProtectedUsers = new Set<string>();
+
 async function renderGodList() {
   const list = document.getElementById('god-list') as HTMLDivElement | null;
   if (!list) return;
@@ -1270,6 +1318,33 @@ async function renderGodList() {
     return;
   }
   list.innerHTML = '';
+
+  // 💀 Server-Shutdown-Knopf
+  const shutdownBox = document.createElement('div');
+  shutdownBox.className = 'god-shutdown-box';
+  shutdownBox.innerHTML = `
+    <button type="button" id="god-shutdown" class="god-btn-shutdown">
+      💀 SERVER-SHUTDOWN<br/><small>ALLES resetten — außer dich + ausgewählte</small>
+    </button>
+  `;
+  list.appendChild(shutdownBox);
+  shutdownBox.querySelector('#god-shutdown')?.addEventListener('click', async () => {
+    const protectedList = ['ben', ...Array.from(godProtectedUsers)];
+    const toDelete = accounts.filter((a) => !protectedList.includes(a.username_lower));
+    const namesPreview = toDelete.map((a) => a.username).join(', ') || '(niemand)';
+    if (!confirm(`💀 SERVER-SHUTDOWN\n\nWird unwiderruflich GELÖSCHT:\n• Alle Spielrunden + Chat-Verläufe + Inventare\n• ${toDelete.length} User-Accounts: ${namesPreview}\n\nGeschützt: dein Account + ausgewählte (${protectedList.join(', ')})\n\nWirklich? Das kann nicht rückgängig gemacht werden.`)) return;
+    const finalConfirm = prompt('Tippe "SHUTDOWN" zum bestätigen:');
+    if (finalConfirm !== 'SHUTDOWN') return;
+    await runGlitchHackAnimation(toDelete.length);
+    await cloudWipeAllSessions();
+    for (const a of toDelete) {
+      await cloudDeleteAccount(a.username_lower);
+    }
+    hideGlitchOverlay();
+    alert(`💀 Server resettet.\n${toDelete.length} Accounts + alle Runden gelöscht.`);
+    godProtectedUsers.clear();
+    await renderGodList();
+  });
   for (const a of accounts) {
     const isBanned = a.banned_until && new Date(a.banned_until) > new Date();
     const isMe = a.username_lower === 'ben';
@@ -1278,7 +1353,9 @@ async function renderGodList() {
     const statusText = isBanned
       ? `🔨 Gesperrt bis ${new Date(a.banned_until!).toLocaleString('de-DE')}`
       : `Erstellt ${new Date(a.created_at).toLocaleDateString('de-DE')}`;
+    const isProtected = godProtectedUsers.has(a.username_lower);
     div.innerHTML = `
+      ${isMe ? '<span class="god-shield" title="Du bist immer geschützt">🛡</span>' : `<input type="checkbox" class="god-protect" data-user="${a.username_lower}" ${isProtected ? 'checked' : ''} title="Vor Server-Shutdown schützen" />`}
       <div>
         <div class="god-user-name">${escapeHtml(a.username)}${isMe ? ' 👑' : ''}</div>
         <div class="god-user-email">${escapeHtml(a.email)}</div>
@@ -1286,6 +1363,12 @@ async function renderGodList() {
       <span class="god-user-status ${isBanned ? 'god-status-banned' : ''}">${statusText}</span>
       <div class="god-user-actions"></div>
     `;
+    const checkbox = div.querySelector('.god-protect') as HTMLInputElement | null;
+    checkbox?.addEventListener('change', () => {
+      const u = checkbox.dataset.user!;
+      if (checkbox.checked) godProtectedUsers.add(u);
+      else godProtectedUsers.delete(u);
+    });
     const actions = div.querySelector('.god-user-actions') as HTMLDivElement;
     if (isMe) {
       actions.innerHTML = '<span style="opacity:0.5;font-size:11px;">— du selbst —</span>';
