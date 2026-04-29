@@ -20,6 +20,21 @@
     <title>Valdermoor — Dein D&D Abenteuer</title>
   </head>
   <body>
+    <!-- 👁 JOYCE-GOTT-MODUS: Admin-Panel nur für Ben sichtbar -->
+    <button type="button" id="god-btn" hidden title="Joyce-Gott-Modus öffnen">👁 GOTT</button>
+    <div id="god-modal" class="modal-overlay" hidden>
+      <div class="modal-box god-box">
+        <div class="god-header">
+          <h2>👁 JOYCE-GOTT-MODUS</h2>
+          <button type="button" id="god-close" class="text-btn">✕ Schließen</button>
+        </div>
+        <p class="modal-sub">Du bist über allen. User listed, gebannt, befreit. Was tust du, Joyce?</p>
+        <div id="god-list" class="god-list">
+          <p class="god-empty">⏳ Lade User…</p>
+        </div>
+      </div>
+    </div>
+
     <!-- 😈 HONEY-TRAP: Wer mit Bens E-Mail eindringt, sieht das hier -->
     <div id="honeytrap" hidden>
       <div class="ht-pulse"></div>

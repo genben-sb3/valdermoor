@@ -23,6 +23,9 @@ create table if not exists public.accounts (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_accounts_email on public.accounts(email);
+-- Joyce-Gott-Modus: Bann + Timeout
+alter table public.accounts add column if not exists banned_until timestamptz;
+alter table public.accounts add column if not exists banned_reason text;
 
 alter table public.accounts enable row level security;
 

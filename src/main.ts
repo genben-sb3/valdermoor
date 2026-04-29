@@ -17,6 +17,8 @@ import {
   cloudGetAccount,
   cloudPutAccount,
   cloudFindAccountByEmail,
+  cloudListAccounts,
+  cloudBanUser,
   type MpSession,
   type MpPlayer as _MpPlayer,
   type MpMessage,
@@ -1052,6 +1054,20 @@ function setupLoginForm() {
       return;
     }
 
+    // 🔨 Bann-Check: wenn User in Cloud gebannt ist, blockieren
+    try {
+      const cloudAcct = await cloudGetAccount(user.toLowerCase());
+      if (cloudAcct?.banned_until) {
+        const until = new Date(cloudAcct.banned_until);
+        if (until > new Date()) {
+          const untilStr = until.toLocaleString('de-DE');
+          const reason = cloudAcct.banned_reason ? ` Grund: ${cloudAcct.banned_reason}` : '';
+          errEl.textContent = `🔨 Gesperrt bis ${untilStr}.${reason}`;
+          return;
+        }
+      }
+    } catch { /* */ }
+
     // 😈 Honey-Trap: bei Bens E-Mail-Account zusätzlicher Admin-Pwd-Check
     if (shouldHoneytrap(acct)) {
       const passed = await showHoneytrap();
@@ -1207,11 +1223,102 @@ function onLoggedIn() {
   playLoginSuccess();
   hideLoginScreen();
   startInactivityLock();
+  showGodButton();
   const save = loadGame();
   if (save) {
     resumeGame(save);
   } else {
     showModeModal();
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// 👁 Joyce-Gott-Modus: Admin-Panel nur für Bens Account.
+// User-Liste, bannen mit Timeouts (5min/30min/1h/24h/permanent).
+// ────────────────────────────────────────────────────────────
+
+function isGodUser(): boolean {
+  return currentUser?.toLowerCase() === 'ben';
+}
+
+function setupGodMode() {
+  const btn = document.getElementById('god-btn') as HTMLButtonElement | null;
+  const modal = document.getElementById('god-modal') as HTMLDivElement | null;
+  const close = document.getElementById('god-close') as HTMLButtonElement | null;
+  if (!btn || !modal || !close) return;
+
+  btn.addEventListener('click', () => {
+    modal.hidden = false;
+    void renderGodList();
+  });
+  close.addEventListener('click', () => { modal.hidden = true; });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+}
+
+function showGodButton() {
+  const btn = document.getElementById('god-btn') as HTMLButtonElement | null;
+  if (btn) btn.hidden = !isGodUser();
+}
+
+async function renderGodList() {
+  const list = document.getElementById('god-list') as HTMLDivElement | null;
+  if (!list) return;
+  list.innerHTML = '<p class="god-empty">⏳ Lade User…</p>';
+  const accounts = await cloudListAccounts();
+  if (accounts.length === 0) {
+    list.innerHTML = '<p class="god-empty">Keine User in der Cloud (Schema-Reload nötig?).</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const a of accounts) {
+    const isBanned = a.banned_until && new Date(a.banned_until) > new Date();
+    const isMe = a.username_lower === 'ben';
+    const div = document.createElement('div');
+    div.className = `god-user ${isBanned ? 'god-banned' : ''}`;
+    const statusText = isBanned
+      ? `🔨 Gesperrt bis ${new Date(a.banned_until!).toLocaleString('de-DE')}`
+      : `Erstellt ${new Date(a.created_at).toLocaleDateString('de-DE')}`;
+    div.innerHTML = `
+      <div>
+        <div class="god-user-name">${escapeHtml(a.username)}${isMe ? ' 👑' : ''}</div>
+        <div class="god-user-email">${escapeHtml(a.email)}</div>
+      </div>
+      <span class="god-user-status ${isBanned ? 'god-status-banned' : ''}">${statusText}</span>
+      <div class="god-user-actions"></div>
+    `;
+    const actions = div.querySelector('.god-user-actions') as HTMLDivElement;
+    if (isMe) {
+      actions.innerHTML = '<span style="opacity:0.5;font-size:11px;">— du selbst —</span>';
+    } else if (isBanned) {
+      const undo = document.createElement('button');
+      undo.className = 'god-btn-small god-btn-undo';
+      undo.textContent = '🕊 Befreien';
+      undo.addEventListener('click', async () => {
+        await cloudBanUser(a.username_lower, null, '');
+        await renderGodList();
+      });
+      actions.appendChild(undo);
+    } else {
+      const opts: Array<{ label: string; ms: number | null }> = [
+        { label: '5min', ms: 5 * 60_000 },
+        { label: '30min', ms: 30 * 60_000 },
+        { label: '24h', ms: 24 * 60 * 60_000 },
+        { label: '🔨 Bannen', ms: 100 * 365 * 24 * 60 * 60_000 },
+      ];
+      for (const opt of opts) {
+        const b = document.createElement('button');
+        b.className = `god-btn-small ${opt.label.includes('Bannen') ? 'god-btn-danger' : ''}`;
+        b.textContent = opt.label;
+        b.addEventListener('click', async () => {
+          const reason = prompt(`Grund für ${opt.label}-Sperre auf ${a.username}?`) ?? '';
+          const until = opt.ms ? new Date(Date.now() + opt.ms) : null;
+          await cloudBanUser(a.username_lower, until, reason);
+          await renderGodList();
+        });
+        actions.appendChild(b);
+      }
+    }
+    list.appendChild(div);
   }
 }
 
@@ -3452,6 +3559,7 @@ function init() {
   setupModeModal();
   setupJoinModal();
   setupLobbyModal();
+  setupGodMode();
 
   window.addEventListener('beforeunload', () => {
     currentAbortController?.abort();

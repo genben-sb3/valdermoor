@@ -79,6 +79,8 @@ export interface CloudAccount {
   password_salt: string;
   password_algo: string;
   created_at: string;
+  banned_until?: string | null;
+  banned_reason?: string | null;
 }
 
 export async function cloudGetAccount(usernameLower: string): Promise<CloudAccount | null> {
@@ -115,6 +117,34 @@ export async function cloudPutAccount(acct: {
   });
   if (error) {
     console.warn('cloudPutAccount fehlgeschlagen:', error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function cloudListAccounts(): Promise<CloudAccount[]> {
+  if (!isMultiplayerAvailable()) return [];
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('accounts')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.warn('cloudListAccounts:', error.message);
+    return [];
+  }
+  return (data as CloudAccount[]) ?? [];
+}
+
+export async function cloudBanUser(usernameLower: string, until: Date | null, reason: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa
+    .from('accounts')
+    .update({ banned_until: until ? until.toISOString() : null, banned_reason: reason || null })
+    .eq('username_lower', usernameLower);
+  if (error) {
+    console.warn('cloudBanUser:', error.message);
     return false;
   }
   return true;

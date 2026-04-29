@@ -1400,6 +1400,106 @@ body::before {
   }
 }
 
+/* ========== 👁 Joyce-Gott-Modus (Admin-Panel) ========== */
+#god-btn {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 9999;
+  background: linear-gradient(180deg, #2a1432 0%, #1a0c20 100%);
+  border: 2px solid #a053d9;
+  border-radius: 24px;
+  color: #d9a8ff;
+  padding: 10px 18px;
+  font-family: var(--font-heading);
+  font-size: 14px;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(160, 83, 217, 0.5);
+  animation: god-pulse 2.4s ease-in-out infinite;
+}
+@keyframes god-pulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(160, 83, 217, 0.5); }
+  50%      { box-shadow: 0 0 28px rgba(217, 168, 255, 0.8); }
+}
+#god-btn:hover {
+  background: linear-gradient(180deg, #3a1c44 0%, #2a1432 100%);
+  border-color: #d9a8ff;
+  color: #fff;
+}
+.god-box {
+  width: min(720px, 95vw);
+  border-color: #a053d9;
+  box-shadow: 0 0 0 1px rgba(160, 83, 217, 0.3), 0 24px 80px rgba(0,0,0,0.8);
+}
+.god-box h2 { color: #d9a8ff; }
+.god-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.god-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.god-user {
+  background: #1a1410;
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid #a053d9;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.god-user.god-banned { border-left-color: #b84848; opacity: 0.7; }
+.god-user-name {
+  font-family: var(--font-heading);
+  color: #d9a8ff;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+.god-user-email {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.god-user-status {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+}
+.god-user-status.god-status-banned { color: #ff8080; font-weight: bold; }
+.god-user-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+  flex-wrap: wrap;
+}
+.god-btn-small {
+  background: #2a1432;
+  border: 1px solid #a053d9;
+  color: #d9a8ff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  letter-spacing: 0.06em;
+}
+.god-btn-small:hover { background: #3a1c44; border-color: #d9a8ff; }
+.god-btn-small.god-btn-danger { border-color: #b84848; color: #ff8080; }
+.god-btn-small.god-btn-danger:hover { background: #2a1010; }
+.god-btn-small.god-btn-undo { border-color: #4a8a6a; color: #7bc080; }
+.god-empty { color: var(--text-dim); font-style: italic; text-align: center; padding: 24px; }
+
 /* ========== Honey-Trap (😈 fake security theater) ========== */
 #honeytrap {
   position: fixed;
