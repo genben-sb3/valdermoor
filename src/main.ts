@@ -1682,6 +1682,33 @@ function attachMultiplayerSubscription() {
       cleanupMultiplayer();
     },
   });
+  updateMultiplayerIndicator();
+}
+
+function updateMultiplayerIndicator() {
+  const existing = document.getElementById('mp-indicator');
+  if (existing) existing.remove();
+  if (!mpSession) return;
+  const header = document.getElementById('chat-header');
+  if (!header) return;
+  const indicator = document.createElement('div');
+  indicator.id = 'mp-indicator';
+  indicator.className = 'mp-indicator';
+  indicator.innerHTML = `
+    <span class="mp-dot"></span>
+    <span class="mp-label">${mpIsHost ? '👑 Host' : '🎮 Multi'}</span>
+    <span class="mp-code" title="Code zum Teilen">${mpSession.code}</span>
+  `;
+  indicator.addEventListener('click', async () => {
+    if (!mpSession) return;
+    try {
+      await navigator.clipboard.writeText(mpSession.code);
+      indicator.classList.add('copied');
+      setTimeout(() => indicator.classList.remove('copied'), 1500);
+    } catch { /* */ }
+  });
+  indicator.title = 'Klick zum Kopieren des Codes';
+  header.appendChild(indicator);
 }
 
 function handleRemoteMessage(msg: MpMessage) {

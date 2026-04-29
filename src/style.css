@@ -1400,6 +1400,58 @@ body::before {
   }
 }
 
+/* ========== Multiplayer-Indicator im Header ========== */
+.mp-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(180deg, #1f2a2a 0%, #14211a 100%);
+  border: 1px solid var(--dm-border);
+  border-radius: 16px;
+  padding: 4px 12px 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 6px;
+  transition: all 0.15s;
+  user-select: none;
+}
+.mp-indicator:hover {
+  border-color: var(--dm-label);
+  box-shadow: 0 0 8px rgba(127, 213, 224, 0.3);
+}
+.mp-indicator.copied {
+  background: linear-gradient(180deg, #1a3020, #14211a);
+  border-color: #7bc080;
+}
+.mp-indicator.copied::after {
+  content: " ✓ kopiert";
+  color: #7bc080;
+}
+.mp-dot {
+  width: 8px;
+  height: 8px;
+  background: #7bc080;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #7bc080;
+  animation: mp-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mp-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.mp-label {
+  color: var(--dm-label);
+  font-family: var(--font-heading);
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+.mp-code {
+  font-family: var(--mono);
+  color: var(--gold-bright);
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+
 /* ========== Multiplayer-Modals (Mode-Auswahl, Join, Lobby) ========== */
 
 .mode-box {
