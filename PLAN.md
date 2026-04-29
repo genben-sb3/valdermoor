@@ -207,6 +207,14 @@ Reihenfolge nach geschätztem Wert (oben = größter Wow-Effekt):
 
 ---
 
+## Credits
+
+**Valdermoor** ist ein Schulprojekt von **Ben Hofstetter** (12), erschaffen über zwei Tage Ende April 2026.
+
+Vom Anfang bis Multiplayer wurde der Code zusammen mit **Claude Opus 4.7** (Anthropic) geschrieben — Ben gab die Vision, Claude tippte die Implementation. Vibes über kódzeilen, kreatives Problemlösen, viele "💀 ich darf nie Gott werden"-Momente. ⚔
+
+---
+
 ## Notizen für später
 
 - Groq-Free-Tier reicht für ~50 Spieler/Tag bei normaler Nutzung. Wenn die App wirklich viral geht, auf bezahlten Plan upgraden ($0.05 / 1M Tokens — extrem günstig).
