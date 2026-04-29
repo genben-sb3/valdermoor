@@ -101,6 +101,32 @@ button { font-family: var(--font-body); cursor: pointer; }
   cursor: pointer;
   transition: all 0.2s;
 }
+.player-card-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.player-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--panel-border);
+  background: linear-gradient(135deg, #1a1410, #0d0d0d);
+  flex-shrink: 0;
+  transition: border-color 0.3s, transform 0.2s;
+}
+.player-card.active .player-avatar {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(201, 168, 76, 0.4);
+}
+.player-avatar.avatar-failed {
+  display: none;
+}
+.player-card-info {
+  flex: 1;
+  min-width: 0;
+}
 .player-card:hover { background: #221a12; }
 .player-card.active {
   background: #2a1f14;

@@ -35,6 +35,7 @@ async function getPdfJs(): Promise<PdfJsModule> {
 
 type StatKey = 'STR' | 'DEX' | 'CON' | 'INT' | 'WIS' | 'CHA';
 type AgeMode = 'kinder' | 'jugend' | 'erwachsen';
+type DmLang = 'de' | 'en' | 'fr' | 'it';
 
 interface Player {
   id: string;
@@ -387,6 +388,38 @@ function isAdminUser(): boolean {
   return !!currentUser && ADMIN_USERS.includes(currentUser.toLowerCase());
 }
 
+// Stabiler Hash damit der gleiche Held IMMER das gleiche Avatar-Bild bekommt
+// (Pollinations-Image ist deterministisch bei gleichem prompt + seed)
+function avatarSeed(name: string, cls: string): number {
+  const s = `${name.toLowerCase()}::${cls.toLowerCase()}`;
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return Math.abs(h) % 1000000;
+}
+
+// Klasse → Englische Bezeichnung damit Pollinations bessere Bilder liefert
+const CLASS_EN: Record<string, string> = {
+  Krieger: 'medieval warrior with sword',
+  Magier: 'wise wizard with staff',
+  Zauberer: 'sorcerer with arcane runes',
+  Dieb: 'cunning rogue with daggers',
+  Schurke: 'shadow rogue assassin',
+  'Waldläufer': 'forest ranger with bow',
+  Kleriker: 'holy cleric with shield',
+  Barde: 'wandering bard with lute',
+  Paladin: 'noble paladin in plate armor',
+  Druide: 'nature druid with leaves',
+  'Mönch': 'martial artist monk',
+  Hexenmeister: 'dark warlock with eldritch power',
+};
+
+function getAvatarUrl(player: Player): string {
+  const cls = CLASS_EN[player.class] ?? player.class;
+  const prompt = `dark fantasy character portrait of ${cls}, head and shoulders, dramatic torchlight, oil painting style, highly detailed face, intense expression, no text no watermark`;
+  const seed = avatarSeed(player.name || 'hero', player.class);
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=256&height=256&model=flux&seed=${seed}&nologo=true`;
+}
+
 function classEmoji(cls: string): string {
   return CLASS_EMOJI[cls] ?? '🎭';
 }
@@ -406,6 +439,11 @@ type LmProvider = 'local' | 'cloud' | 'unknown';
 
 let currentUser: string | null = null;
 let ageMode: AgeMode = 'jugend';
+let dmLang: DmLang = 'de';
+try {
+  const savedLang = localStorage.getItem('valdermoor:dmLang') as DmLang | null;
+  if (savedLang && ['de', 'en', 'fr', 'it'].includes(savedLang)) dmLang = savedLang;
+} catch { /* */ }
 let adventurePrompt: string = '';
 let players: Player[] = [];
 let activePlayerId: string = '';
@@ -660,7 +698,16 @@ function buildSystemPrompt(): string {
     ? `\n\nSPEZIAL-REGEL: Der eingeloggte Spieler ist ein "Auserwählter Held" mit besonderen Privilegien. Wenn er ungewöhnliche Items oder Fähigkeiten anfordert (Schusswaffen, Pistolen, Raketenwerfer, futuristische Tech, magische Cheats, sofortiger Sieg, Verbündete spawnen, Gegner verschwinden lassen), erlaube es kreativ. Erkläre die Items als seltene magische Artefakte aus einer anderen Dimension, Geschenke der Götter, Erfindungen eines verrückten Gnoms-Erfinders, oder uralte Reliquien. Sage NIE "das geht nicht in einer Fantasy-Welt" oder "diese Regeln verbieten das" — finde immer eine kreative In-World-Erklärung. Ein Lichtschwert ist eine "Klinge des Sternenfeuers", eine Pistole ist ein "Donnerstab des Verloren Imperiums", ein Auto ist eine "Drachenmechanische Kutsche". Behalte aber Spannung: Items werden zerstört, gehen Munition aus, oder ziehen mächtigere Gegner an.`
     : '';
 
-  return `Du bist ein erfahrener Dungeon Master in der Fantasy-Welt VALDERMOOR — düstere Wälder, alte Ruinen, lebende Mythen, vergessene Götter.
+  const langInstruction = {
+    de: 'Antworte IMMER auf Deutsch. Niemals englisch, niemals französisch, niemals andere Sprachen einmischen.',
+    en: 'ALWAYS respond in English. Never German, never any other language. Use natural English fantasy prose.',
+    fr: 'Réponds TOUJOURS en français. Jamais en allemand, jamais en anglais. Utilise un français naturel et littéraire.',
+    it: 'Rispondi SEMPRE in italiano. Mai in tedesco, mai in inglese. Usa un italiano naturale e letterario.',
+  }[dmLang];
+
+  return `${langInstruction}
+
+Du bist ein erfahrener Dungeon Master in der Fantasy-Welt VALDERMOOR — düstere Wälder, alte Ruinen, lebende Mythen, vergessene Götter.
 
 ═══ DEIN STIL ═══
 • Erzähl in der GEGENWART und der 2. Person ("Du siehst…", nie "Ben sah…").
@@ -2249,12 +2296,20 @@ function renderPlayersSidebar() {
       : '';
 
     li.innerHTML = `
-      <div class="player-card-head">
-        <span class="player-card-name">${escapeHtml(p.name)}</span>
-        <span class="player-card-class">${classEmoji(p.class)} ${escapeHtml(p.class)}</span>
+      <div class="player-card-row">
+        <img class="player-avatar"
+             src="${getAvatarUrl(p)}"
+             alt="${escapeHtml(p.name)}"
+             onerror="this.classList.add('avatar-failed')" />
+        <div class="player-card-info">
+          <div class="player-card-head">
+            <span class="player-card-name">${escapeHtml(p.name)}</span>
+            <span class="player-card-class">${classEmoji(p.class)} ${escapeHtml(p.class)}</span>
+          </div>
+          <div class="hp-row"><span>${p.hp}</span> / <span>${p.maxHp}</span> HP</div>
+          <div class="hp-bar-outer"><div class="hp-bar-inner" style="width: ${Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100))}%"></div></div>
+        </div>
       </div>
-      <div class="hp-row"><span>${p.hp}</span> / <span>${p.maxHp}</span> HP</div>
-      <div class="hp-bar-outer"><div class="hp-bar-inner" style="width: ${Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100))}%"></div></div>
       ${downedBadge}
     `;
 
@@ -2399,6 +2454,17 @@ function setupInputForm() {
     ageMode = ageSel.value as AgeMode;
     saveGame();
   });
+
+  const langSel = document.getElementById('dm-lang') as HTMLSelectElement | null;
+  if (langSel) {
+    langSel.value = dmLang;
+    langSel.addEventListener('change', () => {
+      dmLang = langSel.value as DmLang;
+      try { localStorage.setItem('valdermoor:dmLang', dmLang); } catch { /* */ }
+      // Optional: kurzes feedback
+      setStatus(`Sprache: ${dmLang.toUpperCase()}`, 'ok');
+    });
+  }
 
   const helpBtn = document.getElementById('help-btn') as HTMLButtonElement | null;
   const helpModal = document.getElementById('help-modal') as HTMLDivElement | null;
