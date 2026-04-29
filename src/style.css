@@ -207,7 +207,22 @@ button { font-family: var(--font-body); cursor: pointer; }
   padding: 16px 24px;
   border-bottom: 1px solid var(--panel-border);
   background: linear-gradient(180deg, #1a1410 0%, var(--panel) 100%);
+  gap: 12px;
 }
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  max-width: calc(100% - 200px);
+}
+.header-controls > * { flex-shrink: 0; }
+.header-controls::-webkit-scrollbar { height: 6px; }
+.header-controls::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
 #chat-header h1 { margin: 0; font-size: 26px; }
 
 #status {
@@ -1403,29 +1418,32 @@ body::before {
 /* ========== 👁 Joyce-Gott-Modus (Admin-Panel) ========== */
 #god-btn {
   position: fixed;
-  top: 18px;
-  left: 18px;
+  top: 24px;
+  left: 24px;
   z-index: 9999;
-  background: linear-gradient(180deg, #2a1432 0%, #1a0c20 100%);
-  border: 2px solid #a053d9;
-  border-radius: 24px;
-  color: #d9a8ff;
-  padding: 10px 18px;
+  background: linear-gradient(180deg, #5a1010 0%, #2a0808 100%);
+  border: 3px solid #ff4040;
+  border-radius: 50px;
+  color: #ffb0b0;
+  padding: 18px 36px;
   font-family: var(--font-heading);
-  font-size: 14px;
-  letter-spacing: 0.15em;
+  font-size: 24px;
+  letter-spacing: 0.25em;
+  font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 0 16px rgba(160, 83, 217, 0.5);
-  animation: god-pulse 2.4s ease-in-out infinite;
+  box-shadow: 0 0 32px rgba(255, 64, 64, 0.7), inset 0 0 12px rgba(255,0,0,0.3);
+  animation: god-pulse-red 1.6s ease-in-out infinite;
+  text-shadow: 0 0 12px rgba(255, 100, 100, 0.6);
 }
-@keyframes god-pulse {
-  0%, 100% { box-shadow: 0 0 16px rgba(160, 83, 217, 0.5); }
-  50%      { box-shadow: 0 0 28px rgba(217, 168, 255, 0.8); }
+@keyframes god-pulse-red {
+  0%, 100% { box-shadow: 0 0 32px rgba(255, 64, 64, 0.7), inset 0 0 12px rgba(255,0,0,0.3); transform: scale(1); }
+  50%      { box-shadow: 0 0 56px rgba(255, 0, 0, 1.0), inset 0 0 20px rgba(255,0,0,0.5); transform: scale(1.05); }
 }
 #god-btn:hover {
-  background: linear-gradient(180deg, #3a1c44 0%, #2a1432 100%);
-  border-color: #d9a8ff;
+  background: linear-gradient(180deg, #7a1818 0%, #3a0a0a 100%);
+  border-color: #ff8080;
   color: #fff;
+  transform: scale(1.1) !important;
 }
 .god-box {
   width: min(720px, 95vw);
