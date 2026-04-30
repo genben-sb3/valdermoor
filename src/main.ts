@@ -688,6 +688,59 @@ function clearLoginFails(usernameLower: string) {
   }
 }
 
+// ─── Device-Trust (2FA-Skip) ─────────────────────────────────
+// Nach erfolgreichem 2FA kann das Gerät 30 Tage als vertraut markiert werden.
+// Login auf vertrautem Gerät überspringt den Email-Code-Schritt — sicher genug,
+// weil der Pwd-Check + Honey-Trap + Bann-Check vorher trotzdem laufen.
+const TRUST_DEVICE_KEY = 'valdermoor:trustedDevices';
+const TRUST_DEVICE_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage
+
+interface TrustEntry { username: string; emailHash: string; expires: number; }
+
+async function emailFingerprint(email: string): Promise<string> {
+  // Tied to email so wenn der User die Email ändert, fliegt der Trust raus.
+  const data = new TextEncoder().encode('valdermoor-trust:' + email.toLowerCase());
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash))
+    .slice(0, 12)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function loadTrustedDevices(): Record<string, TrustEntry> {
+  try {
+    const raw = localStorage.getItem(TRUST_DEVICE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveTrustedDevices(map: Record<string, TrustEntry>) {
+  try { localStorage.setItem(TRUST_DEVICE_KEY, JSON.stringify(map)); } catch { /* */ }
+}
+
+async function isDeviceTrusted(usernameLower: string, email: string): Promise<boolean> {
+  const map = loadTrustedDevices();
+  const entry = map[usernameLower];
+  if (!entry) return false;
+  if (entry.expires < Date.now()) {
+    delete map[usernameLower];
+    saveTrustedDevices(map);
+    return false;
+  }
+  const fp = await emailFingerprint(email);
+  return entry.emailHash === fp;
+}
+
+async function trustDevice(usernameLower: string, email: string) {
+  const map = loadTrustedDevices();
+  map[usernameLower] = {
+    username: usernameLower,
+    emailHash: await emailFingerprint(email),
+    expires: Date.now() + TRUST_DEVICE_DURATION_MS,
+  };
+  saveTrustedDevices(map);
+}
+
 // Passwort-Stärke prüfen. Min 8 Zeichen + mind. 1 Buchstabe + mind. 1 Ziffer.
 // Returns null wenn ok, sonst Fehlermeldung.
 function checkPasswordStrength(pwd: string): string | null {
@@ -1395,6 +1448,14 @@ function setupLoginForm() {
       }
     }
 
+    // 🔓 Vertrautes Gerät? Dann 2FA-Email überspringen.
+    if (await isDeviceTrusted(userLower, acct.email)) {
+      console.log('🔓 Vertrautes Gerät — 2FA wird übersprungen');
+      setSession(acct.username);
+      onLoggedIn();
+      return;
+    }
+
     pendingAction = { kind: 'login', username: acct.username };
     await triggerEmailCode(acct.email);
   });
@@ -1514,6 +1575,10 @@ function setupEmailCodeModal() {
       return;
     }
 
+    // Trust-Device-Checkbox auswerten — User kann das Häkchen auch wegklicken.
+    const trustCb = document.getElementById('trust-device-checkbox') as HTMLInputElement | null;
+    const wantTrust = trustCb?.checked ?? false;
+
     if (pendingAction.kind === 'register') {
       const salt = generateSalt();
       const passwordHash = await hashPasswordPBKDF2(
@@ -1539,8 +1604,16 @@ function setupEmailCodeModal() {
         passwordAlgo: PBKDF2_CURRENT_ALGO,
       });
       setSession(pendingAction.username);
+      if (wantTrust) {
+        await trustDevice(pendingAction.username.toLowerCase(), pendingAction.email);
+      }
     } else {
-      setSession(pendingAction.username);
+      const u = pendingAction.username;
+      setSession(u);
+      if (wantTrust) {
+        const acct = loadAccounts()[u.toLowerCase()];
+        if (acct) await trustDevice(u.toLowerCase(), acct.email);
+      }
     }
 
     pendingAction = null;
@@ -1858,7 +1931,7 @@ async function renderGodList() {
 // automatisch ausgeloggt. Schutz wenn er PC offen lässt.
 // ────────────────────────────────────────────────────────────
 
-const INACTIVITY_LOCK_MS = 5 * 60 * 1000;
+const INACTIVITY_LOCK_MS = 20 * 60 * 1000;
 let inactivityTimer: number | null = null;
 let inactivityHandlersBound = false;
 
@@ -1873,7 +1946,7 @@ function resetInactivityTimer() {
     stopSpeaking();
     saveGame();
     clearSession();
-    alert('🔒 5 Minuten keine Aktivität — automatisch abgemeldet (Admin-Account).');
+    alert('🔒 20 Minuten keine Aktivität — automatisch abgemeldet (Admin-Account).');
     location.reload();
   }, INACTIVITY_LOCK_MS);
 }
@@ -2949,7 +3022,15 @@ function setStatus(text: string, kind: 'ok' | 'error' | 'busy') {
 }
 
 let saveToastTimer: number | null = null;
+let lastSuccessToastAt = 0;
+const SUCCESS_TOAST_THROTTLE_MS = 60_000; // max 1× pro Minute
 function showSaveToast(text: string = '💾 Gespeichert', isError: boolean = false) {
+  // Erfolgs-Toasts drosseln — sonst Spam bei jedem Auto-Save.
+  if (!isError) {
+    const now = Date.now();
+    if (now - lastSuccessToastAt < SUCCESS_TOAST_THROTTLE_MS) return;
+    lastSuccessToastAt = now;
+  }
   let toast = document.getElementById('save-toast') as HTMLDivElement | null;
   if (!toast) {
     toast = document.createElement('div');
@@ -2965,6 +3046,30 @@ function showSaveToast(text: string = '💾 Gespeichert', isError: boolean = fal
   saveToastTimer = window.setTimeout(() => {
     toast?.classList.remove('show');
   }, duration);
+}
+
+// Toast für "Neue App-Version verfügbar" (Service Worker).
+function showUpdateToast(newWorker: ServiceWorker) {
+  let toast = document.getElementById('update-toast') as HTMLDivElement | null;
+  if (toast) return; // schon offen
+  toast = document.createElement('div');
+  toast.id = 'update-toast';
+  toast.className = 'update-toast';
+  toast.innerHTML = `
+    <span>✨ Neue Version verfügbar</span>
+    <button type="button" id="update-reload-btn">Neu laden</button>
+    <button type="button" id="update-dismiss-btn" title="Später">✕</button>
+  `;
+  document.body.appendChild(toast);
+  toast.querySelector('#update-reload-btn')?.addEventListener('click', () => {
+    // SW soll jetzt aktivieren — controllerchange-Listener reloadt automatisch
+    newWorker.postMessage({ type: 'skip-waiting' });
+  });
+  toast.querySelector('#update-dismiss-btn')?.addEventListener('click', () => {
+    toast?.remove();
+  });
+  // Animation rein
+  requestAnimationFrame(() => toast?.classList.add('show'));
 }
 
 interface LmStatus {
@@ -3503,13 +3608,35 @@ function addQuest(text: string) {
   quests.push({ id: questId(), text: trimmed, done: false, addedAt: Date.now() });
 }
 
-function completeQuestByMatch(needle: string) {
+function completeQuestByMatch(needle: string): Quest | null {
   const n = needle.trim().toLowerCase();
-  if (!n) return;
+  if (!n) return null;
   const open = quests.filter((q) => !q.done);
   const target = open.find((q) => q.text.toLowerCase().includes(n))
     ?? open.find((q) => n.includes(q.text.toLowerCase().slice(0, 12)));
-  if (target) target.done = true;
+  if (target) {
+    target.done = true;
+    return target;
+  }
+  return null;
+}
+
+// Kleine "Quest erledigt"-Feier — Sound + dedizierter Toast (umgeht Save-Throttle).
+function celebrateQuest(text: string) {
+  try { playItemPickup(); } catch { /* */ }
+  const short = text.length > 40 ? text.slice(0, 40) + '…' : text;
+  let toast = document.getElementById('quest-toast') as HTMLDivElement | null;
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'quest-toast';
+    toast.className = 'quest-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = `✅ Auftrag erledigt: ${short}`;
+  toast.classList.remove('show');
+  void toast.offsetWidth; // Reflow → Animation neu starten
+  toast.classList.add('show');
+  window.setTimeout(() => toast?.classList.remove('show'), 2400);
 }
 
 function parseQuests(text: string) {
@@ -3523,9 +3650,11 @@ function parseQuests(text: string) {
   }
   const doneRe = /\[QUEST-ERFOLG:\s*([^\]]+?)\s*\]/gi;
   while ((m = doneRe.exec(text)) !== null) {
-    const before = quests.filter((q) => q.done).length;
-    completeQuestByMatch(m[1]);
-    if (quests.filter((q) => q.done).length > before) changed = true;
+    const completed = completeQuestByMatch(m[1]);
+    if (completed) {
+      changed = true;
+      celebrateQuest(completed.text);
+    }
   }
   if (changed) renderQuests();
 }
@@ -3587,10 +3716,27 @@ function updateLocationBanner(loc: string) {
   if (currentLocationImage === url) return;
   currentLocationImage = url;
   banner.hidden = false;
+  // Skeleton + Label sofort zeigen, Bild lädt asynchron drüber.
   banner.innerHTML = `
-    <img src="${url}" alt="${escapeHtml(loc)}" loading="lazy" />
+    <div class="location-banner-skeleton"></div>
+    <img class="location-banner-img" alt="${escapeHtml(loc)}" loading="lazy" />
     <div class="location-banner-label">📍 ${escapeHtml(loc)}</div>
   `;
+  const img = banner.querySelector('.location-banner-img') as HTMLImageElement | null;
+  if (img) {
+    img.addEventListener('load', () => {
+      img.classList.add('loaded');
+      const skeleton = banner.querySelector('.location-banner-skeleton');
+      skeleton?.remove();
+    }, { once: true });
+    img.addEventListener('error', () => {
+      // Wenn das Pollinations-Bild nicht lädt: Banner verstecken statt kaputtem Bild.
+      console.warn('[ORT] Bild konnte nicht geladen werden:', url);
+      banner.hidden = true;
+      currentLocationImage = '';
+    }, { once: true });
+    img.src = url;
+  }
 }
 
 function clearLocationBanner() {
@@ -3603,13 +3749,18 @@ function clearLocationBanner() {
 }
 
 function parseLocation(text: string) {
-  const m = text.match(/\[ORT:\s*([^\]]+?)\s*\]/i);
-  if (!m) return;
-  const loc = m[1].trim();
-  if (!loc) return;
-  if (loc.toLowerCase() === currentLocation.toLowerCase()) return;
-  currentLocation = loc;
-  updateLocationBanner(loc);
+  // Wenn die DM mehrere [ORT:]-Tags emittiert, nehmen wir den LETZTEN
+  // (= der zuletzt betretene Schauplatz innerhalb dieser Antwort).
+  const re = /\[ORT:\s*([^\]]+?)\s*\]/gi;
+  let m: RegExpExecArray | null;
+  let lastLoc: string | null = null;
+  while ((m = re.exec(text)) !== null) {
+    lastLoc = m[1].trim();
+  }
+  if (!lastLoc) return;
+  if (lastLoc.toLowerCase() === currentLocation.toLowerCase()) return;
+  currentLocation = lastLoc;
+  updateLocationBanner(lastLoc);
 }
 
 function parseDamage(text: string) {
@@ -4377,8 +4528,33 @@ function init() {
   // Nur in Production (sonst kollidiert mit Vite-HMR)
   if ('serviceWorker' in navigator && !import.meta.env.DEV) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        // Wenn SW eine neue Version findet, "Update available"-Toast zeigen.
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateToast(newWorker);
+            }
+          });
+        });
+        // Alle 30 Min nach Updates suchen, falls Tab lange offen bleibt.
+        setInterval(() => { reg.update().catch(() => { /* */ }); }, 30 * 60_000);
+      }).catch((err) => {
         console.warn('Service Worker Registration fehlgeschlagen:', err);
+      });
+      // Wenn der neue SW gewonnen hat (clients.claim), Tab automatisch reload.
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        location.reload();
+      });
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data?.type === 'sw-updated') {
+          console.log('🔄 Service Worker aktualisiert auf', e.data.version);
+        }
       });
     });
   }

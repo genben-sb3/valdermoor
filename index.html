@@ -142,6 +142,10 @@
             <input type="text" id="email-code-input" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
           </div>
           <div class="login-error" id="email-code-error"></div>
+          <label class="trust-device-label">
+            <input type="checkbox" id="trust-device-checkbox" checked />
+            <span>Diesem Gerät 30 Tage vertrauen (kein Code mehr nötig)</span>
+          </label>
           <div class="email-modal-actions">
             <button type="button" id="email-code-cancel" class="btn-secondary">Abbrechen</button>
             <button type="submit" class="btn-primary">Bestätigen</button>
