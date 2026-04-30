@@ -194,6 +194,49 @@ export async function cloudWipeAllSessions(): Promise<boolean> {
   return true;
 }
 
+// Username umbenennen — kopiert den Account auf den neuen username_lower und löscht den alten.
+// Idempotent: macht nichts, wenn der Ziel-Username schon existiert (= bereits migriert).
+export async function cloudRenameAccount(
+  oldLower: string,
+  newLower: string,
+  newUsername: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!isMultiplayerAvailable()) return { ok: false, reason: 'no-cloud' };
+  const supa = getClient();
+  const { data: existing } = await supa
+    .from('accounts')
+    .select('username_lower')
+    .eq('username_lower', newLower)
+    .maybeSingle();
+  if (existing) return { ok: false, reason: 'target-exists' };
+
+  const { data: old, error: getErr } = await supa
+    .from('accounts')
+    .select('*')
+    .eq('username_lower', oldLower)
+    .maybeSingle();
+  if (getErr || !old) return { ok: false, reason: 'old-missing' };
+
+  const oldRow = old as CloudAccount;
+  const { error: insErr } = await supa.from('accounts').insert({
+    username_lower: newLower,
+    username: newUsername,
+    email: oldRow.email,
+    password_hash: oldRow.password_hash,
+    password_salt: oldRow.password_salt,
+    password_algo: oldRow.password_algo,
+    banned_until: oldRow.banned_until ?? null,
+    banned_reason: oldRow.banned_reason ?? null,
+  });
+  if (insErr) return { ok: false, reason: 'insert-failed: ' + insErr.message };
+
+  const { error: delErr } = await supa.from('accounts').delete().eq('username_lower', oldLower);
+  if (delErr) {
+    console.warn('cloudRenameAccount: alten Eintrag konnte nicht gelöscht werden:', delErr.message);
+  }
+  return { ok: true };
+}
+
 export async function cloudFindAccountByEmail(email: string): Promise<CloudAccount | null> {
   if (!isMultiplayerAvailable()) return null;
   const supa = getClient();

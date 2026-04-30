@@ -27,6 +27,17 @@ create index if not exists idx_accounts_email on public.accounts(email);
 alter table public.accounts add column if not exists banned_until timestamptz;
 alter table public.accounts add column if not exists banned_reason text;
 
+-- ─── Username-Migration "ben" → "admin" ─────────────────────────────
+-- Läuft normalerweise automatisch beim App-Start (siehe migrateBenToAdmin).
+-- Falls die automatische Migration nicht laufen konnte (z.B. weil "admin" schon
+-- als anderer Account existiert), kannst du manuell per SQL aufräumen:
+--
+--   delete from public.accounts where username_lower = 'ben';  -- alten Eintrag weg
+--   -- ODER: alten Eintrag manuell auf 'admin' umtaufen, falls du das willst:
+--   update public.accounts
+--     set username_lower = 'admin', username = 'admin'
+--     where username_lower = 'ben';
+
 alter table public.accounts enable row level security;
 
 -- ─── Spielrunden / Sessions ────────────────────────────────
