@@ -1269,7 +1269,22 @@ function setupLoginForm() {
       return;
     }
 
-    const userLower = user.toLowerCase();
+    let userLower = user.toLowerCase();
+
+    // Legacy-Username 'ben' → 'admin' am Login-Eingang automatisch umlenken,
+    // damit alte Lesezeichen / alte Sessions weiter funktionieren.
+    // Wenn 'admin' existiert (lokal oder cloud), nutzen wir den.
+    if (userLower === LEGACY_ADMIN_USERNAME) {
+      const localAdmin = loadAccounts()['admin'];
+      let cloudAdmin: { username_lower: string } | null = null;
+      try { cloudAdmin = await cloudGetAccount('admin'); } catch { /* */ }
+      if (localAdmin || cloudAdmin) {
+        userLower = 'admin';
+        console.log('🔁 Login-Username "ben" → "admin" weitergeleitet');
+      }
+      // Wenn weder admin noch ben existiert, lassen wir userLower auf 'ben'
+      // und migrieren nach erfolgreichem Pwd-Check (siehe unten).
+    }
 
     // Rate-Limit-Check: bei N Fehlversuchen für M Minuten gesperrt.
     const lockedUntil = loginLockedUntil(userLower);
@@ -1341,6 +1356,34 @@ function setupLoginForm() {
     }
     clearLoginFails(userLower);
     void migrateLegacyHash(pass, acct);
+
+    // Falls Login als legacy 'ben' erfolgreich war und die Startup-Migration
+    // (warum auch immer) nicht lief: jetzt erzwingen. Nach dem Rename wird
+    // pendingAction.username = 'admin', sodass die Session sauber als admin
+    // gesetzt wird.
+    if (
+      userLower === LEGACY_ADMIN_USERNAME &&
+      acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase()
+    ) {
+      console.log('🔁 Login-Time-Migration: rename "ben" → "admin"');
+      const renamed: StoredAccount = { ...acct, username: 'admin' };
+      const all = loadAccounts();
+      delete all[LEGACY_ADMIN_USERNAME];
+      all['admin'] = renamed;
+      try {
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(all));
+        // Spielstand-Key umbenennen
+        const oldGameKey = GAME_KEY_PREFIX + LEGACY_ADMIN_USERNAME;
+        const oldSave = localStorage.getItem(oldGameKey);
+        if (oldSave) {
+          localStorage.setItem(GAME_KEY_PREFIX + 'admin', oldSave);
+          localStorage.removeItem(oldGameKey);
+        }
+      } catch (e) { console.warn('Login-Time-Migration localStorage:', e); }
+      acct = renamed;
+      // Cloud-Rename im Hintergrund — best effort
+      void cloudRenameAccount(LEGACY_ADMIN_USERNAME, 'admin', 'admin');
+    }
 
     // 😈 Honey-Trap: erst nach korrektem Passwort. Wer das richtige Pwd hat,
     // muss zusätzlich das Honey-Trap-Pwd kennen, sonst Login abgebrochen.
@@ -1696,6 +1739,7 @@ async function renderGodList() {
   // tauchen sonst nicht auf, weil cloudListAccounts nur Supabase-Einträge sieht.
   const cloudAccts = await cloudListAccounts();
   const localAccts = loadAccounts();
+  console.log('[GodPanel] cloud:', cloudAccts.length, 'lokal:', Object.keys(localAccts).length);
   const merged = new Map<string, CloudAccount>();
   for (const a of cloudAccts) merged.set(a.username_lower, a);
   for (const [key, la] of Object.entries(localAccts)) {
@@ -1714,7 +1758,9 @@ async function renderGodList() {
     a.created_at < b.created_at ? 1 : -1,
   );
   if (accounts.length === 0) {
-    list.innerHTML = '<p class="god-empty">Keine User gefunden.</p>';
+    list.innerHTML = `<p class="god-empty">Keine User gefunden.<br/>
+      <small>Cloud: ${cloudAccts.length} · Lokal: ${Object.keys(localAccts).length}</small><br/>
+      <small>Tipp: Wenn nur du da bist, gibt's auch nur dich. Andere User registrieren sich auf deren Geräten.</small></p>`;
     return;
   }
   list.innerHTML = '';
