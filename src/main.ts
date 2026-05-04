@@ -2062,11 +2062,17 @@ function buildAccountRow(a: CloudAccount): HTMLDivElement {
     }
   }
 
+  // Account existiert in der Cloud? Lokale-only Accounts haben leeren Hash.
+  const isInCloud = a.password_hash !== '';
+
   // Pwd-Reset (Joyce kann fremde Pwds überschreiben)
   const pwdBtn = document.createElement('button');
   pwdBtn.className = 'god-btn-small';
   pwdBtn.textContent = '🔑 Pwd';
-  pwdBtn.title = 'Neues Passwort für diesen Account setzen';
+  pwdBtn.title = isInCloud
+    ? 'Neues Passwort für diesen Account setzen'
+    : 'Account existiert nur lokal — Pwd-Reset benötigt Cloud-Account';
+  pwdBtn.disabled = !isInCloud;
   pwdBtn.addEventListener('click', async () => {
     const newPwd = prompt(`Neues Passwort für ${a.username} (min 8 Zeichen, 1 Buchstabe + 1 Ziffer):`);
     if (!newPwd) return;
@@ -2089,10 +2095,19 @@ function buildAccountRow(a: CloudAccount): HTMLDivElement {
   const delBtn = document.createElement('button');
   delBtn.className = 'god-btn-small god-btn-danger';
   delBtn.textContent = '🗑';
-  delBtn.title = 'Account permanent löschen';
+  delBtn.title = isInCloud
+    ? 'Account permanent löschen (Cloud)'
+    : 'Lokalen Account löschen';
   delBtn.addEventListener('click', async () => {
     if (!confirm(`Account "${a.username}" (${a.email}) wirklich permanent löschen?\n\nDas kann nicht rückgängig gemacht werden.`)) return;
-    await cloudDeleteAccount(a.username_lower);
+    if (isInCloud) {
+      await cloudDeleteAccount(a.username_lower);
+    } else {
+      // Lokal-Only → aus localStorage entfernen
+      const all = loadAccounts();
+      delete all[a.username_lower];
+      try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(all)); } catch { /* */ }
+    }
     await refreshAllGodData();
   });
   actions.appendChild(delBtn);
