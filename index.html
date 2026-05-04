@@ -18,6 +18,49 @@
       rel="stylesheet"
     />
     <title>Valdermoor — Dein D&D Abenteuer</title>
+    <!--
+      🚨 NOTAUSGANG: ?nuke=1 oder #nuke deregistriert Service Worker + löscht
+      alle Caches + reloadt. Inline weil dieses Script BEVOR irgendwas anderes
+      lädt laufen muss. So kommt man auch raus wenn der gesamte Bundle-Code
+      gecached + kaputt ist.
+      Anwendung: https://valdermoor.vercel.app/?nuke=1
+    -->
+    <script>
+      (function () {
+        var qs = location.search + location.hash;
+        if (qs.indexOf('nuke') === -1) return;
+        document.documentElement.style.background = '#0d0d0d';
+        document.documentElement.style.color = '#e9c66b';
+        document.documentElement.innerHTML =
+          '<body style="font:18px monospace;padding:40px;color:#e9c66b;background:#0d0d0d">' +
+          '<h1>🧨 Valdermoor Nuke-Modus</h1>' +
+          '<p id="nuke-status">Service Worker deregistrieren…</p>' +
+          '</body>';
+        var status = document.getElementById('nuke-status');
+        function setStatus(s) { if (status) status.textContent = s; }
+        (async function () {
+          try {
+            if ('serviceWorker' in navigator) {
+              var regs = await navigator.serviceWorker.getRegistrations();
+              for (var i = 0; i < regs.length; i++) await regs[i].unregister();
+            }
+            setStatus('Caches löschen…');
+            if ('caches' in window) {
+              var keys = await caches.keys();
+              for (var j = 0; j < keys.length; j++) await caches.delete(keys[j]);
+            }
+            setStatus('✅ Sauber. Lade neu in 1 Sek…');
+            setTimeout(function () {
+              // Cleanup-Param entfernen + cache-bust
+              var clean = location.origin + location.pathname + '?fresh=' + Date.now();
+              location.replace(clean);
+            }, 1000);
+          } catch (e) {
+            setStatus('❌ Fehler: ' + (e && e.message ? e.message : e));
+          }
+        })();
+      })();
+    </script>
   </head>
   <body>
     <!-- 💀 GLITCH-HACK-OVERLAY beim Server-Shutdown -->
