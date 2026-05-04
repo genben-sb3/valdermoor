@@ -20,7 +20,19 @@ import {
   cloudListAccounts,
   cloudBanUser,
   cloudDeleteAccount,
+  cloudRenameAccount,
   cloudWipeAllSessions,
+  cloudInsertStoryBeat,
+  cloudListStoryBeats,
+  cloudClearStoryBeats,
+  cloudTouchLastLogin,
+  cloudResetAccountPassword,
+  cloudListActiveSessions,
+  cloudCloseSession,
+  cloudKickPlayer,
+  cloudListPlayersForSession,
+  subscribeToAdminEvents,
+  type MpSessionWithCount,
   subscribeToGlobalEvents,
   broadcastShutdown,
   type MpSession,
@@ -28,6 +40,7 @@ import {
   type MpMessage,
   type MpInventoryItem,
   type SessionSubscription,
+  type CloudAccount,
 } from './multiplayer';
 import {
   playDiceRoll,
@@ -88,7 +101,7 @@ interface InventoryItem {
   quantity: number;
 }
 
-type PasswordAlgo = 'sha256-v1' | 'pbkdf2-v2';
+type PasswordAlgo = 'sha256-v1' | 'pbkdf2-v2' | 'pbkdf2-v3';
 
 interface StoredAccount {
   username: string;
@@ -103,6 +116,13 @@ type PendingAction =
   | { kind: 'login'; username: string }
   | { kind: 'register'; username: string; email: string; password: string };
 
+interface Quest {
+  id: string;
+  text: string;
+  done: boolean;
+  addedAt: number;
+}
+
 interface GameSave {
   ageMode: AgeMode;
   adventurePrompt?: string;
@@ -110,6 +130,8 @@ interface GameSave {
   inventory: InventoryItem[];
   activePlayerId: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; speaker?: string }>;
+  quests?: Quest[];
+  currentLocation?: string;
   savedAt: number;
 }
 
@@ -412,10 +434,13 @@ const CLASS_EMOJI: Record<string, string> = {
 // Admin-Mode: Diese User dürfen vom DM ungewöhnliche Items spawnen lassen
 // (Pistolen, Raketen, futuristische Tech). Der DM weicht für sie die
 // Fantasy-Realismus-Regel kreativ auf, statt "geht nicht" zu sagen.
-const ADMIN_USERS = ['ben'];
+const ADMIN_USERS = ['admin'];
+const LEGACY_ADMIN_USERNAME = 'ben'; // alter Name — wird beim Login einmalig auf 'admin' migriert
 
 function isAdminUser(): boolean {
-  return !!currentUser && ADMIN_USERS.includes(currentUser.toLowerCase());
+  if (!currentUser || !ADMIN_USERS.includes(currentUser.toLowerCase())) return false;
+  const acct = loadAccounts()[currentUser.toLowerCase()];
+  return !!acct && acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase();
 }
 
 // Stabiler Hash damit der gleiche Held IMMER das gleiche Avatar-Bild bekommt
@@ -479,6 +504,9 @@ let players: Player[] = [];
 let activePlayerId: string = '';
 let messages: Message[] = [];
 const inventory: InventoryItem[] = [];
+const quests: Quest[] = [];
+let currentLocation: string = '';
+let currentLocationImage: string = '';
 let isGenerating = false;
 let currentAbortController: AbortController | null = null;
 let pendingAction: PendingAction | null = null;
@@ -523,7 +551,12 @@ function uid(): string {
 // Crypto / Auth (Web Crypto API)
 // ────────────────────────────────────────────────────────────
 
-const PBKDF2_ITERATIONS = 100_000;
+// PBKDF2-Iterationen pro Algo-Version. Iterations werden mit dem Algo gespeichert,
+// sodass bestehende Hashes verifizierbar bleiben, wenn wir die Anzahl erhöhen.
+const PBKDF2_ITERATIONS_V2 = 100_000; // alt
+const PBKDF2_ITERATIONS_V3 = 600_000; // OWASP 2023 für PBKDF2-SHA256
+const PBKDF2_CURRENT_ALGO: PasswordAlgo = 'pbkdf2-v3';
+const PBKDF2_CURRENT_ITERATIONS = PBKDF2_ITERATIONS_V3;
 
 async function hashPasswordLegacySha256(password: string, salt: string): Promise<string> {
   const enc = new TextEncoder();
@@ -534,7 +567,11 @@ async function hashPasswordLegacySha256(password: string, salt: string): Promise
     .join('');
 }
 
-async function hashPasswordPBKDF2(password: string, salt: string): Promise<string> {
+async function hashPasswordPBKDF2(
+  password: string,
+  salt: string,
+  iterations: number,
+): Promise<string> {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -547,7 +584,7 @@ async function hashPasswordPBKDF2(password: string, salt: string): Promise<strin
     {
       name: 'PBKDF2',
       salt: enc.encode(salt),
-      iterations: PBKDF2_ITERATIONS,
+      iterations,
       hash: 'SHA-256',
     },
     keyMaterial,
@@ -558,32 +595,171 @@ async function hashPasswordPBKDF2(password: string, salt: string): Promise<strin
     .join('');
 }
 
-async function verifyPassword(password: string, acct: StoredAccount): Promise<boolean> {
-  const algo: PasswordAlgo = acct.passwordAlgo ?? 'sha256-v1';
-  if (algo === 'pbkdf2-v2') {
-    const hash = await hashPasswordPBKDF2(password, acct.passwordSalt);
-    return hash === acct.passwordHash;
+// Konstantzeit-Vergleich: gleicher Aufwand egal an welcher Stelle Diff steht.
+// Verhindert (theoretische) Timing-Side-Channels bei Hash-Vergleich.
+function constantTimeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
-  const hash = await hashPasswordLegacySha256(password, acct.passwordSalt);
-  return hash === acct.passwordHash;
+  return mismatch === 0;
 }
 
+async function verifyPassword(password: string, acct: StoredAccount): Promise<boolean> {
+  const algo: PasswordAlgo = acct.passwordAlgo ?? 'sha256-v1';
+  if (algo === 'pbkdf2-v3') {
+    const hash = await hashPasswordPBKDF2(password, acct.passwordSalt, PBKDF2_ITERATIONS_V3);
+    return constantTimeEquals(hash, acct.passwordHash);
+  }
+  if (algo === 'pbkdf2-v2') {
+    const hash = await hashPasswordPBKDF2(password, acct.passwordSalt, PBKDF2_ITERATIONS_V2);
+    return constantTimeEquals(hash, acct.passwordHash);
+  }
+  const hash = await hashPasswordLegacySha256(password, acct.passwordSalt);
+  return constantTimeEquals(hash, acct.passwordHash);
+}
+
+// Nach erfolgreichem Login: alten Hash auf aktuelle Version upgraden.
+// Läuft im Hintergrund, blockiert den Login nicht.
 async function migrateLegacyHash(password: string, acct: StoredAccount): Promise<void> {
-  if (acct.passwordAlgo === 'pbkdf2-v2') return;
+  if (acct.passwordAlgo === PBKDF2_CURRENT_ALGO) return;
   const newSalt = generateSalt();
-  const newHash = await hashPasswordPBKDF2(password, newSalt);
-  saveAccount({
+  const newHash = await hashPasswordPBKDF2(password, newSalt, PBKDF2_CURRENT_ITERATIONS);
+  const upgraded: StoredAccount = {
     ...acct,
     passwordSalt: newSalt,
     passwordHash: newHash,
-    passwordAlgo: 'pbkdf2-v2',
+    passwordAlgo: PBKDF2_CURRENT_ALGO,
+  };
+  saveAccount(upgraded);
+  // Cloud auch upgraden, damit andere Geräte den neuen Hash sehen.
+  void cloudPutAccount({
+    username: upgraded.username,
+    email: upgraded.email,
+    passwordHash: upgraded.passwordHash,
+    passwordSalt: upgraded.passwordSalt,
+    passwordAlgo: PBKDF2_CURRENT_ALGO,
   });
 }
 
 function generateSalt(): string {
-  const bytes = new Uint8Array(16);
+  // 32 Byte Salt (256 Bit) — mehr als genug Entropie, kollisionsfrei.
+  const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ─── Login-Rate-Limit ────────────────────────────────────────
+// Lokal pro Browser. Stoppt ehrliche Fehler + langsame Brute-Force.
+// Nicht 100% sicher (DevTools kann localStorage clearen), aber besser als nix.
+const LOGIN_ATTEMPTS_KEY = 'valdermoor:loginAttempts';
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_LOCK_MS = 5 * 60 * 1000; // 5 Min
+
+interface LoginAttemptInfo { fails: number; lockUntil: number; }
+
+function loadLoginAttempts(): Record<string, LoginAttemptInfo> {
+  try {
+    const raw = localStorage.getItem(LOGIN_ATTEMPTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveLoginAttempts(map: Record<string, LoginAttemptInfo>) {
+  try { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(map)); } catch { /* */ }
+}
+
+function loginLockedUntil(usernameLower: string): number {
+  const map = loadLoginAttempts();
+  const info = map[usernameLower];
+  if (!info) return 0;
+  if (info.lockUntil > Date.now()) return info.lockUntil;
+  return 0;
+}
+
+function recordLoginFail(usernameLower: string): { lockedNow: boolean; lockUntil: number } {
+  const map = loadLoginAttempts();
+  const cur = map[usernameLower] ?? { fails: 0, lockUntil: 0 };
+  cur.fails += 1;
+  if (cur.fails >= LOGIN_MAX_FAILS) {
+    cur.lockUntil = Date.now() + LOGIN_LOCK_MS;
+    cur.fails = 0;
+  }
+  map[usernameLower] = cur;
+  saveLoginAttempts(map);
+  return { lockedNow: cur.lockUntil > Date.now(), lockUntil: cur.lockUntil };
+}
+
+function clearLoginFails(usernameLower: string) {
+  const map = loadLoginAttempts();
+  if (map[usernameLower]) {
+    delete map[usernameLower];
+    saveLoginAttempts(map);
+  }
+}
+
+// ─── Device-Trust (2FA-Skip) ─────────────────────────────────
+// Nach erfolgreichem 2FA kann das Gerät 30 Tage als vertraut markiert werden.
+// Login auf vertrautem Gerät überspringt den Email-Code-Schritt — sicher genug,
+// weil der Pwd-Check + Honey-Trap + Bann-Check vorher trotzdem laufen.
+const TRUST_DEVICE_KEY = 'valdermoor:trustedDevices';
+const TRUST_DEVICE_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage
+
+interface TrustEntry { username: string; emailHash: string; expires: number; }
+
+async function emailFingerprint(email: string): Promise<string> {
+  // Tied to email so wenn der User die Email ändert, fliegt der Trust raus.
+  const data = new TextEncoder().encode('valdermoor-trust:' + email.toLowerCase());
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash))
+    .slice(0, 12)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function loadTrustedDevices(): Record<string, TrustEntry> {
+  try {
+    const raw = localStorage.getItem(TRUST_DEVICE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveTrustedDevices(map: Record<string, TrustEntry>) {
+  try { localStorage.setItem(TRUST_DEVICE_KEY, JSON.stringify(map)); } catch { /* */ }
+}
+
+async function isDeviceTrusted(usernameLower: string, email: string): Promise<boolean> {
+  const map = loadTrustedDevices();
+  const entry = map[usernameLower];
+  if (!entry) return false;
+  if (entry.expires < Date.now()) {
+    delete map[usernameLower];
+    saveTrustedDevices(map);
+    return false;
+  }
+  const fp = await emailFingerprint(email);
+  return entry.emailHash === fp;
+}
+
+async function trustDevice(usernameLower: string, email: string) {
+  const map = loadTrustedDevices();
+  map[usernameLower] = {
+    username: usernameLower,
+    emailHash: await emailFingerprint(email),
+    expires: Date.now() + TRUST_DEVICE_DURATION_MS,
+  };
+  saveTrustedDevices(map);
+}
+
+// Passwort-Stärke prüfen. Min 8 Zeichen + mind. 1 Buchstabe + mind. 1 Ziffer.
+// Returns null wenn ok, sonst Fehlermeldung.
+function checkPasswordStrength(pwd: string): string | null {
+  if (pwd.length < 8) return 'Passwort muss mindestens 8 Zeichen haben.';
+  if (!/[A-Za-zÄÖÜäöüß]/.test(pwd)) return 'Passwort muss mindestens einen Buchstaben enthalten.';
+  if (!/[0-9]/.test(pwd)) return 'Passwort muss mindestens eine Ziffer enthalten.';
+  // Verbiete Username-im-Passwort: häufiger Anfänger-Fehler.
+  return null;
 }
 
 function generateEmailCode(): string {
@@ -633,8 +809,129 @@ function getSession(): string | null {
 // Game persistence (per-user save in localStorage)
 // ────────────────────────────────────────────────────────────
 
+// ─── Save-Slots ──────────────────────────────────────────────
+// 3 Slots pro Account. Slot 1 ist der "Standard" — bestehende Spielstände
+// werden bei der ersten Verwendung dort gespeichert (Backwards-Compat).
+const SAVE_SLOT_KEY = 'valdermoor:saveSlot';
+const SAVE_SLOT_COUNT = 3;
+let activeSaveSlot = 1;
+
+function loadActiveSlot() {
+  try {
+    const raw = localStorage.getItem(SAVE_SLOT_KEY);
+    const n = raw ? parseInt(raw, 10) : 1;
+    activeSaveSlot = Number.isInteger(n) && n >= 1 && n <= SAVE_SLOT_COUNT ? n : 1;
+  } catch { activeSaveSlot = 1; }
+}
+
+function setActiveSlot(slot: number) {
+  if (slot < 1 || slot > SAVE_SLOT_COUNT) return;
+  activeSaveSlot = slot;
+  try { localStorage.setItem(SAVE_SLOT_KEY, String(slot)); } catch { /* */ }
+  updateSlotButton();
+}
+
+function updateSlotButton() {
+  const btn = document.getElementById('slot-btn') as HTMLButtonElement | null;
+  if (btn) btn.textContent = `💾 Slot ${activeSaveSlot}`;
+}
+
+function openSlotModal() {
+  const modal = document.getElementById('slot-modal') as HTMLDivElement | null;
+  const list = document.getElementById('slot-list') as HTMLDivElement | null;
+  if (!modal || !list) return;
+  list.innerHTML = '';
+  for (let i = 1; i <= SAVE_SLOT_COUNT; i++) {
+    const save = loadGameFromSlot(i);
+    const isActive = i === activeSaveSlot;
+    const row = document.createElement('div');
+    row.className = 'slot-row' + (isActive ? ' slot-active' : '');
+    const summary = save
+      ? `${save.players.length} Held${save.players.length === 1 ? '' : 'en'} · ${new Date(save.savedAt).toLocaleString('de-DE')}`
+      : '— leer —';
+    row.innerHTML = `
+      <div class="slot-row-info">
+        <div class="slot-row-title">${isActive ? '⚡ ' : ''}Slot ${i}</div>
+        <div class="slot-row-sub">${escapeHtml(summary)}</div>
+      </div>
+      <div class="slot-row-actions">
+        <button type="button" class="btn-secondary" data-action="switch" data-slot="${i}" ${isActive ? 'disabled' : ''}>Wechseln</button>
+        ${save ? `<button type="button" class="btn-danger" data-action="delete" data-slot="${i}">Löschen</button>` : ''}
+      </div>
+    `;
+    list.appendChild(row);
+  }
+  list.onclick = (e) => {
+    const t = e.target as HTMLElement;
+    const btn = t.closest('button[data-action]') as HTMLButtonElement | null;
+    if (!btn) return;
+    const slot = parseInt(btn.dataset.slot ?? '0', 10);
+    const action = btn.dataset.action;
+    if (action === 'switch' && slot >= 1 && slot <= SAVE_SLOT_COUNT) {
+      if (players.length > 0 && !confirm(`Zu Slot ${slot} wechseln? Aktueller Stand wird in Slot ${activeSaveSlot} gespeichert.`)) return;
+      saveGame();
+      setActiveSlot(slot);
+      modal.hidden = true;
+      const newSave = loadGame();
+      if (newSave) {
+        void resumeGame(newSave);
+      } else {
+        // Leerer Slot → neue Runde starten
+        players = [];
+        messages = [];
+        inventory.length = 0;
+        quests.length = 0;
+        currentLocation = '';
+        currentLocationImage = '';
+        clearLocationBanner();
+        $<HTMLElement>('#app').hidden = true;
+        showCharModal();
+      }
+    } else if (action === 'delete' && slot >= 1 && slot <= SAVE_SLOT_COUNT) {
+      if (!confirm(`Slot ${slot} wirklich löschen? Kann nicht rückgängig gemacht werden.`)) return;
+      const k = gameKeyForSlot(slot);
+      if (k) localStorage.removeItem(k);
+      openSlotModal();
+    }
+  };
+  modal.hidden = false;
+}
+
+function setupSlotModal() {
+  loadActiveSlot();
+  updateSlotButton();
+  const btn = document.getElementById('slot-btn') as HTMLButtonElement | null;
+  btn?.addEventListener('click', openSlotModal);
+  const cancel = document.getElementById('slot-cancel-btn') as HTMLButtonElement | null;
+  cancel?.addEventListener('click', () => {
+    const modal = document.getElementById('slot-modal') as HTMLDivElement | null;
+    if (modal) modal.hidden = true;
+  });
+}
+
 function gameKey(): string | null {
-  return currentUser ? GAME_KEY_PREFIX + currentUser.toLowerCase() : null;
+  if (!currentUser) return null;
+  const base = GAME_KEY_PREFIX + currentUser.toLowerCase();
+  // Slot 1 nutzt den klassischen Key (Backwards-Compat — bestehende Spielstände bleiben).
+  return activeSaveSlot === 1 ? base : `${base}:slot${activeSaveSlot}`;
+}
+
+function gameKeyForSlot(slot: number): string | null {
+  if (!currentUser) return null;
+  const base = GAME_KEY_PREFIX + currentUser.toLowerCase();
+  return slot === 1 ? base : `${base}:slot${slot}`;
+}
+
+function loadGameFromSlot(slot: number): GameSave | null {
+  const key = gameKeyForSlot(slot);
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as GameSave;
+    if (!data || !Array.isArray(data.players) || data.players.length === 0) return null;
+    return data;
+  } catch { return null; }
 }
 
 function saveGame() {
@@ -651,6 +948,8 @@ function saveGame() {
       .slice(1)
       .filter((m): m is Message & { role: 'user' | 'assistant' } => m.role !== 'system')
       .map((m) => ({ role: m.role, content: m.content, speaker: m.speaker })),
+    quests: [...quests],
+    currentLocation,
     savedAt: Date.now(),
   };
   try {
@@ -754,9 +1053,11 @@ function buildSystemPrompt(): string {
     it: 'Rispondi SEMPRE in italiano. Mai in tedesco, mai in inglese. Usa un italiano naturale e letterario.',
   }[dmLang];
 
+  const memoryBlock = buildStoryBeatsBlock();
+
   return `${langInstruction}
 
-Du bist ein erfahrener Dungeon Master in der Fantasy-Welt VALDERMOOR — düstere Wälder, alte Ruinen, lebende Mythen, vergessene Götter.
+Du bist ein erfahrener Dungeon Master in der Fantasy-Welt VALDERMOOR — düstere Wälder, alte Ruinen, lebende Mythen, vergessene Götter.${memoryBlock}
 
 ═══ DEIN STIL ═══
 • Erzähl in der GEGENWART und der 2. Person ("Du siehst…", nie "Ben sah…").
@@ -785,6 +1086,10 @@ Setze passende Tags AM ENDE deiner Antwort (nicht mittendrin):
 [SCHADEN: <Heldname> -<HP>]  — Held verliert HP (nur ganze Zahlen, max 30 pro Treffer)
 [HEILUNG: <Heldname> +<HP>]  — Held bekommt HP zurück
 [WÜRFEL: W20 <Grund>]        — Spieler muss würfeln, du wartest auf Ergebnis (W4/W6/W8/W10/W12/W20/W100 erlaubt)
+[QUEST: <kurzer Auftrag>]     — neuer Auftrag fürs Quest-Log (max ein Satz, z.B. "Finde die alte Karte im Tempel")
+[QUEST-ERFOLG: <Stichwort>]   — Auftrag erledigt; Stichwort = ein paar Wörter aus dem ursprünglichen Quest-Text
+[ORT: <englischer Bild-Prompt>] — wenn Helden einen NEUEN Schauplatz betreten. NUR englische Stichworte für Bildgenerierung, KEIN Satz, z.B. "ancient stone temple in misty forest" oder "frozen mountain pass at dusk"
+[ERINNERN: <eine Zeile>]      — wenn etwas EHRENWERTES passiert das die KI auch in zukünftigen Sessions wissen soll: Boss besiegt, magisches Item gefunden, NPC mit Helden verbündet, Stadt befreit, etc. EIN kurzer prägnanter Satz, z.B. "Ben hat den Schwarzdrachen Vargor in der Mondkluft besiegt." Setze NICHT für Kleinkram (Tür geöffnet, Goblin getötet) — nur für Sachen die in Wochen noch wichtig wären.
 
 ABSOLUT VERBOTEN:
 • KEINE Meta-Tags wie "[KEINE Tags]", "[Keine Aktion]", "[—]", "[]" — wenn nichts passt: GAR NICHTS schreiben.
@@ -1031,20 +1336,49 @@ function setupLoginForm() {
       return;
     }
 
+    let userLower = user.toLowerCase();
+
+    // Legacy-Username 'ben' → 'admin' am Login-Eingang automatisch umlenken,
+    // damit alte Lesezeichen / alte Sessions weiter funktionieren.
+    // Wenn 'admin' existiert (lokal oder cloud), nutzen wir den.
+    if (userLower === LEGACY_ADMIN_USERNAME) {
+      const localAdmin = loadAccounts()['admin'];
+      let cloudAdmin: { username_lower: string } | null = null;
+      try { cloudAdmin = await cloudGetAccount('admin'); } catch { /* */ }
+      if (localAdmin || cloudAdmin) {
+        userLower = 'admin';
+        console.log('🔁 Login-Username "ben" → "admin" weitergeleitet');
+      }
+      // Wenn weder admin noch ben existiert, lassen wir userLower auf 'ben'
+      // und migrieren nach erfolgreichem Pwd-Check (siehe unten).
+    }
+
+    // Rate-Limit-Check: bei N Fehlversuchen für M Minuten gesperrt.
+    const lockedUntil = loginLockedUntil(userLower);
+    if (lockedUntil) {
+      const remainMs = lockedUntil - Date.now();
+      const mins = Math.ceil(remainMs / 60_000);
+      errEl.textContent = `🔒 Zu viele Fehlversuche. Versuch's in ${mins} Minute${mins === 1 ? '' : 'n'} wieder.`;
+      return;
+    }
+
     const accounts = loadAccounts();
-    let acct: StoredAccount | undefined = accounts[user.toLowerCase()];
+    let acct: StoredAccount | undefined = accounts[userLower];
 
     // Wenn lokal nicht da: Cloud probieren
     if (!acct) {
       try {
-        const cloud = await cloudGetAccount(user.toLowerCase());
+        const cloud = await cloudGetAccount(userLower);
         if (cloud) {
+          // Cloud kann ältere Hashes haben (pbkdf2-v2). verifyPassword unterstützt
+          // alle drei Versionen; migrateLegacyHash zieht nach Login auf v3 hoch.
+          const cloudAlgo = (cloud.password_algo as PasswordAlgo) ?? 'pbkdf2-v2';
           acct = {
             username: cloud.username,
             email: cloud.email,
             passwordHash: cloud.password_hash,
             passwordSalt: cloud.password_salt,
-            passwordAlgo: (cloud.password_algo as PasswordAlgo) ?? 'pbkdf2-v2',
+            passwordAlgo: cloudAlgo,
             created: Date.now(),
           };
           // Cache lokal
@@ -1054,13 +1388,15 @@ function setupLoginForm() {
     }
 
     if (!acct) {
-      errEl.textContent = 'Benutzer nicht gefunden.';
+      // Generische Fehlermeldung — verrät nicht, ob User existiert (User-Enumeration-Schutz).
+      recordLoginFail(userLower);
+      errEl.textContent = 'Benutzername oder Passwort falsch.';
       return;
     }
 
     // 🔨 Bann-Check: wenn User in Cloud gebannt ist, blockieren
     try {
-      const cloudAcct = await cloudGetAccount(user.toLowerCase());
+      const cloudAcct = await cloudGetAccount(userLower);
       if (cloudAcct?.banned_until) {
         const until = new Date(cloudAcct.banned_until);
         if (until > new Date()) {
@@ -1072,7 +1408,52 @@ function setupLoginForm() {
       }
     } catch { /* */ }
 
-    // 😈 Honey-Trap: bei Bens E-Mail-Account zusätzlicher Admin-Pwd-Check
+    // Erst Passwort verifizieren — falsche Passwörter dürfen die Honey-Trap
+    // NICHT triggern (sonst nervt sie bei eigenen Tippfehlern).
+    const ok = await verifyPassword(pass, acct);
+    if (!ok) {
+      const { lockedNow, lockUntil } = recordLoginFail(userLower);
+      if (lockedNow) {
+        const mins = Math.ceil((lockUntil - Date.now()) / 60_000);
+        errEl.textContent = `🔒 Zu viele Fehlversuche. Gesperrt für ${mins} Minute${mins === 1 ? '' : 'n'}.`;
+      } else {
+        errEl.textContent = 'Benutzername oder Passwort falsch.';
+      }
+      return;
+    }
+    clearLoginFails(userLower);
+    void migrateLegacyHash(pass, acct);
+
+    // Falls Login als legacy 'ben' erfolgreich war und die Startup-Migration
+    // (warum auch immer) nicht lief: jetzt erzwingen. Nach dem Rename wird
+    // pendingAction.username = 'admin', sodass die Session sauber als admin
+    // gesetzt wird.
+    if (
+      userLower === LEGACY_ADMIN_USERNAME &&
+      acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase()
+    ) {
+      console.log('🔁 Login-Time-Migration: rename "ben" → "admin"');
+      const renamed: StoredAccount = { ...acct, username: 'admin' };
+      const all = loadAccounts();
+      delete all[LEGACY_ADMIN_USERNAME];
+      all['admin'] = renamed;
+      try {
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(all));
+        // Spielstand-Key umbenennen
+        const oldGameKey = GAME_KEY_PREFIX + LEGACY_ADMIN_USERNAME;
+        const oldSave = localStorage.getItem(oldGameKey);
+        if (oldSave) {
+          localStorage.setItem(GAME_KEY_PREFIX + 'admin', oldSave);
+          localStorage.removeItem(oldGameKey);
+        }
+      } catch (e) { console.warn('Login-Time-Migration localStorage:', e); }
+      acct = renamed;
+      // Cloud-Rename im Hintergrund — best effort
+      void cloudRenameAccount(LEGACY_ADMIN_USERNAME, 'admin', 'admin');
+    }
+
+    // 😈 Honey-Trap: erst nach korrektem Passwort. Wer das richtige Pwd hat,
+    // muss zusätzlich das Honey-Trap-Pwd kennen, sonst Login abgebrochen.
     if (shouldHoneytrap(acct)) {
       const passed = await showHoneytrap();
       if (!passed) {
@@ -1081,12 +1462,13 @@ function setupLoginForm() {
       }
     }
 
-    const ok = await verifyPassword(pass, acct);
-    if (!ok) {
-      errEl.textContent = 'Falsches Passwort.';
+    // 🔓 Vertrautes Gerät? Dann 2FA-Email überspringen.
+    if (await isDeviceTrusted(userLower, acct.email)) {
+      console.log('🔓 Vertrautes Gerät — 2FA wird übersprungen');
+      setSession(acct.username);
+      onLoggedIn();
       return;
     }
-    void migrateLegacyHash(pass, acct);
 
     pendingAction = { kind: 'login', username: acct.username };
     await triggerEmailCode(acct.email);
@@ -1109,12 +1491,28 @@ function setupRegisterForm() {
       errEl.textContent = 'Benutzername muss mindestens 3 Zeichen haben.';
       return;
     }
+    // Verbiete Sonderzeichen im Username — vermeidet HTML/SQL-Komplikationen.
+    if (!/^[A-Za-z0-9_-]+$/.test(user)) {
+      errEl.textContent = 'Benutzername darf nur Buchstaben, Zahlen, _ und - enthalten.';
+      return;
+    }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errEl.textContent = 'Bitte eine gültige E-Mail-Adresse eingeben.';
       return;
     }
-    if (!pass || pass.length < 6) {
-      errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
+    const pwdErr = checkPasswordStrength(pass);
+    if (pwdErr) {
+      errEl.textContent = pwdErr;
+      return;
+    }
+    if (pass.toLowerCase().includes(user.toLowerCase())) {
+      errEl.textContent = 'Passwort darf nicht den Benutzernamen enthalten.';
+      return;
+    }
+
+    // 'admin' ist reserviert — nur bestehende Migration erlaubt, keine neue Registrierung.
+    if (user.toLowerCase() === 'admin') {
+      errEl.textContent = 'Dieser Benutzername ist reserviert.';
       return;
     }
 
@@ -1191,15 +1589,23 @@ function setupEmailCodeModal() {
       return;
     }
 
+    // Trust-Device-Checkbox auswerten — User kann das Häkchen auch wegklicken.
+    const trustCb = document.getElementById('trust-device-checkbox') as HTMLInputElement | null;
+    const wantTrust = trustCb?.checked ?? false;
+
     if (pendingAction.kind === 'register') {
       const salt = generateSalt();
-      const passwordHash = await hashPasswordPBKDF2(pendingAction.password, salt);
+      const passwordHash = await hashPasswordPBKDF2(
+        pendingAction.password,
+        salt,
+        PBKDF2_CURRENT_ITERATIONS,
+      );
       const acctData = {
         username: pendingAction.username,
         email: pendingAction.email,
         passwordHash,
         passwordSalt: salt,
-        passwordAlgo: 'pbkdf2-v2' as PasswordAlgo,
+        passwordAlgo: PBKDF2_CURRENT_ALGO,
         created: Date.now(),
       };
       saveAccount(acctData);
@@ -1209,11 +1615,19 @@ function setupEmailCodeModal() {
         email: pendingAction.email,
         passwordHash,
         passwordSalt: salt,
-        passwordAlgo: 'pbkdf2-v2',
+        passwordAlgo: PBKDF2_CURRENT_ALGO,
       });
       setSession(pendingAction.username);
+      if (wantTrust) {
+        await trustDevice(pendingAction.username.toLowerCase(), pendingAction.email);
+      }
     } else {
-      setSession(pendingAction.username);
+      const u = pendingAction.username;
+      setSession(u);
+      if (wantTrust) {
+        const acct = loadAccounts()[u.toLowerCase()];
+        if (acct) await trustDevice(u.toLowerCase(), acct.email);
+      }
     }
 
     pendingAction = null;
@@ -1228,9 +1642,11 @@ function onLoggedIn() {
   hideLoginScreen();
   startInactivityLock();
   showGodButton();
+  // last_login_at in der Cloud aktualisieren — fail-soft.
+  if (currentUser) void cloudTouchLastLogin(currentUser.toLowerCase());
   const save = loadGame();
   if (save) {
-    resumeGame(save);
+    void resumeGame(save);
   } else {
     showModeModal();
   }
@@ -1241,8 +1657,17 @@ function onLoggedIn() {
 // User-Liste, bannen mit Timeouts (5min/30min/1h/24h/permanent).
 // ────────────────────────────────────────────────────────────
 
+// Gott-Modus ist DOPPELT abgesichert:
+// 1. Username muss exakt "admin" sein
+// 2. Account-Email muss zur bekannten Admin-Email passen (HONEYTRAP_EMAIL)
+// Heißt: selbst wenn jemand irgendwie einen "admin"-Account anlegen könnte,
+// bekäme er ohne die richtige Email keinen Zugriff aufs God-Panel.
 function isGodUser(): boolean {
-  return currentUser?.toLowerCase() === 'ben';
+  if (!currentUser) return false;
+  if (currentUser.toLowerCase() !== 'admin') return false;
+  const acct = loadAccounts()['admin'];
+  if (!acct) return false;
+  return acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase();
 }
 
 const GLITCH_OVERRIDE_PWD = '***REMOVED***';
@@ -1357,18 +1782,72 @@ function hideGlitchOverlay() {
   }
 }
 
+// ────────────────────────────────────────────────────────────
+// 👁 Gott-Panel: Tabs (Accounts / Sessions / Aktionen) + Stats + Auto-Refresh
+// ────────────────────────────────────────────────────────────
+
+const godProtectedUsers = new Set<string>();
+// Welcher Tab ist aktiv — wird nur in DOM-Klassen gespiegelt; eigene Variable
+// momentan nicht benötigt, daher entfernt.
+let godSearchQuery = '';
+let godRefreshTimer: number | null = null;
+let godRealtimeUnsub: (() => void) | null = null;
+let lastKnownAccountCount = 0;
+// Cache pro Render — wird von tab-spezifischen Renderern genutzt
+let cachedAccounts: CloudAccount[] = [];
+let cachedSessions: MpSessionWithCount[] = [];
+
 function setupGodMode() {
   const btn = document.getElementById('god-btn') as HTMLButtonElement | null;
   const modal = document.getElementById('god-modal') as HTMLDivElement | null;
   const close = document.getElementById('god-close') as HTMLButtonElement | null;
+  const refresh = document.getElementById('god-refresh') as HTMLButtonElement | null;
+  const search = document.getElementById('god-search') as HTMLInputElement | null;
   if (!btn || !modal || !close) return;
 
   btn.addEventListener('click', () => {
+    if (!isGodUser()) {
+      modal.hidden = true;
+      return;
+    }
     modal.hidden = false;
-    void renderGodList();
+    void refreshAllGodData();
+    startGodAutoRefresh();
   });
-  close.addEventListener('click', () => { modal.hidden = true; });
-  modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+  close.addEventListener('click', () => {
+    modal.hidden = true;
+    stopGodAutoRefresh();
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.hidden = true;
+      stopGodAutoRefresh();
+    }
+  });
+  refresh?.addEventListener('click', () => { void refreshAllGodData(); });
+
+  // Tab-Buttons
+  document.querySelectorAll<HTMLButtonElement>('.god-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const t = tab.dataset.tab as 'accounts' | 'sessions' | 'actions';
+      document.querySelectorAll<HTMLButtonElement>('.god-tab').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tab === t);
+      });
+      document.querySelectorAll<HTMLDivElement>('.god-pane').forEach((p) => {
+        p.classList.toggle('active', p.id === `god-${t}-pane`);
+      });
+    });
+  });
+
+  // Live-Suche
+  search?.addEventListener('input', () => {
+    godSearchQuery = search.value.trim().toLowerCase();
+    renderAccountsList();
+  });
+
+  // Shutdown im Aktions-Tab
+  const shutdown = document.getElementById('god-shutdown') as HTMLButtonElement | null;
+  shutdown?.addEventListener('click', () => void runShutdown());
 }
 
 function showGodButton() {
@@ -1376,104 +1855,368 @@ function showGodButton() {
   if (btn) btn.hidden = !isGodUser();
 }
 
-const godProtectedUsers = new Set<string>();
+function closeGodModal() {
+  const modal = document.getElementById('god-modal') as HTMLDivElement | null;
+  if (modal) modal.hidden = true;
+  stopGodAutoRefresh();
+}
 
-async function renderGodList() {
+function startGodAutoRefresh() {
+  stopGodAutoRefresh();
+  // Alle 10 Sekunden Daten erneuern als Fallback (falls Realtime ausfällt)
+  godRefreshTimer = window.setInterval(() => {
+    if (!isGodUser()) { stopGodAutoRefresh(); return; }
+    void refreshAllGodData();
+  }, 10_000);
+  // Realtime: sofortiges Update bei Registrierung / Login / Session-Änderung
+  godRealtimeUnsub = subscribeToAdminEvents({
+    onAccountChange: () => { void refreshAllGodData(); },
+    onSessionChange: () => { void refreshAllGodData(); },
+  });
+}
+
+function stopGodAutoRefresh() {
+  if (godRefreshTimer) {
+    clearInterval(godRefreshTimer);
+    godRefreshTimer = null;
+  }
+  if (godRealtimeUnsub) {
+    godRealtimeUnsub();
+    godRealtimeUnsub = null;
+  }
+}
+
+// Eigener Toast oben mittig (umgeht Save-Throttle, animiert kurz).
+function showGodToast(text: string) {
+  let toast = document.getElementById('god-toast') as HTMLDivElement | null;
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'god-toast';
+    toast.className = 'god-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.remove('show');
+  void toast.offsetWidth;
+  toast.classList.add('show');
+  window.setTimeout(() => toast?.classList.remove('show'), 3500);
+}
+
+async function refreshAllGodData() {
+  if (!isGodUser()) { closeGodModal(); return; }
+  const [cloudAccts, sessions] = await Promise.all([
+    cloudListAccounts(),
+    cloudListActiveSessions(),
+  ]);
+  // Lokale Accounts mit Cloud-Accounts mergen
+  const localAccts = loadAccounts();
+  const merged = new Map<string, CloudAccount>();
+  for (const a of cloudAccts) merged.set(a.username_lower, a);
+  for (const [key, la] of Object.entries(localAccts)) {
+    if (merged.has(key)) continue;
+    merged.set(key, {
+      username_lower: key,
+      username: la.username,
+      email: la.email,
+      password_hash: '',
+      password_salt: '',
+      password_algo: la.passwordAlgo ?? 'pbkdf2-v3',
+      created_at: new Date(la.created).toISOString(),
+    });
+  }
+  cachedAccounts = Array.from(merged.values()).sort((a, b) =>
+    a.created_at < b.created_at ? 1 : -1,
+  );
+  // Detect: gibt's neue Accounts seit letztem Render? → Toast + Sound
+  if (lastKnownAccountCount > 0 && cachedAccounts.length > lastKnownAccountCount) {
+    const diff = cachedAccounts.length - lastKnownAccountCount;
+    const newest = cachedAccounts[0];
+    showGodToast(`✨ Neuer User: ${newest.username}${diff > 1 ? ` (+${diff - 1} weitere)` : ''}`);
+    try { playLoginSuccess(); } catch { /* */ }
+  }
+  lastKnownAccountCount = cachedAccounts.length;
+  cachedSessions = sessions;
+  renderGodStats();
+  renderAccountsList();
+  renderSessionsList();
+  renderProtectList();
+}
+
+// Aktive User der letzten 10 Min = "online jetzt"
+function isOnlineNow(a: CloudAccount): boolean {
+  if (!a.last_login_at) return false;
+  return Date.now() - new Date(a.last_login_at).getTime() < 10 * 60_000;
+}
+
+function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return 'noch nie';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 'gerade eben';
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return 'gerade eben';
+  if (min < 60) return `vor ${min} Min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `vor ${h} Std`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `vor ${d} Tag${d === 1 ? '' : 'en'}`;
+  return new Date(iso).toLocaleDateString('de-DE');
+}
+
+function renderGodStats() {
+  const el = document.getElementById('god-stats') as HTMLDivElement | null;
+  if (!el) return;
+  const total = cachedAccounts.length;
+  const online = cachedAccounts.filter(isOnlineNow).length;
+  const banned = cachedAccounts.filter(
+    (a) => a.banned_until && new Date(a.banned_until) > new Date(),
+  ).length;
+  const sessions = cachedSessions.length;
+  const players = cachedSessions.reduce((sum, s) => sum + s.player_count, 0);
+  el.innerHTML = `
+    <span class="stat-pill">👥 ${total} Account${total === 1 ? '' : 's'}</span>
+    <span class="stat-pill stat-online">🟢 ${online} online</span>
+    <span class="stat-pill">🔨 ${banned} gebannt</span>
+    <span class="stat-pill">🎲 ${sessions} Runde${sessions === 1 ? '' : 'n'} (${players} Held${players === 1 ? '' : 'en'})</span>
+  `;
+}
+
+function renderAccountsList() {
   const list = document.getElementById('god-list') as HTMLDivElement | null;
   if (!list) return;
-  list.innerHTML = '<p class="god-empty">⏳ Lade User…</p>';
-  const accounts = await cloudListAccounts();
-  if (accounts.length === 0) {
-    list.innerHTML = '<p class="god-empty">Keine User in der Cloud (Schema-Reload nötig?).</p>';
+  const q = godSearchQuery;
+  const filtered = q
+    ? cachedAccounts.filter((a) =>
+        a.username.toLowerCase().includes(q) || a.email.toLowerCase().includes(q),
+      )
+    : cachedAccounts;
+  if (filtered.length === 0) {
+    list.innerHTML = q
+      ? `<p class="god-empty">Kein Treffer für "${escapeHtml(q)}".</p>`
+      : '<p class="god-empty">Keine User in der Cloud.<br/><small>Wenn jemand sich registriert, taucht er hier auf.</small></p>';
     return;
   }
   list.innerHTML = '';
-
-  // 💀 Server-Shutdown-Knopf
-  const shutdownBox = document.createElement('div');
-  shutdownBox.className = 'god-shutdown-box';
-  shutdownBox.innerHTML = `
-    <button type="button" id="god-shutdown" class="god-btn-shutdown">
-      💀 SERVER-SHUTDOWN<br/><small>ALLES resetten — außer dich + ausgewählte</small>
-    </button>
-  `;
-  list.appendChild(shutdownBox);
-  shutdownBox.querySelector('#god-shutdown')?.addEventListener('click', async () => {
-    const protectedList = ['ben', ...Array.from(godProtectedUsers)];
-    const toDelete = accounts.filter((a) => !protectedList.includes(a.username_lower));
-    const namesPreview = toDelete.map((a) => a.username).join(', ') || '(niemand)';
-    if (!confirm(`💀 SERVER-SHUTDOWN\n\nWird unwiderruflich GELÖSCHT:\n• Alle Spielrunden + Chat-Verläufe + Inventare\n• ${toDelete.length} User-Accounts: ${namesPreview}\n\nGeschützt: dein Account + ausgewählte (${protectedList.join(', ')})\n\nWirklich? Das kann nicht rückgängig gemacht werden.`)) return;
-    const finalConfirm = prompt('Tippe "SHUTDOWN" zum bestätigen:');
-    if (finalConfirm !== 'SHUTDOWN') return;
-    // Animation für ALLE (Ben inklusive) — Ben kann sich per Pwd befreien
-    void broadcastShutdown();
-    showGlitchOverlay({ allowOverride: true });
-    // Wipe läuft im Hintergrund, kein Blocking
-    void (async () => {
-      await cloudWipeAllSessions();
-      for (const a of toDelete) await cloudDeleteAccount(a.username_lower);
-      console.log('💀 Wipe complete');
-      godProtectedUsers.clear();
-    })();
-  });
-  for (const a of accounts) {
-    const isBanned = a.banned_until && new Date(a.banned_until) > new Date();
-    const isMe = a.username_lower === 'ben';
-    const div = document.createElement('div');
-    div.className = `god-user ${isBanned ? 'god-banned' : ''}`;
-    const statusText = isBanned
-      ? `🔨 Gesperrt bis ${new Date(a.banned_until!).toLocaleString('de-DE')}`
-      : `Erstellt ${new Date(a.created_at).toLocaleDateString('de-DE')}`;
-    const isProtected = godProtectedUsers.has(a.username_lower);
-    div.innerHTML = `
-      ${isMe ? '<span class="god-shield" title="Du bist immer geschützt">🛡</span>' : `<input type="checkbox" class="god-protect" data-user="${a.username_lower}" ${isProtected ? 'checked' : ''} title="Vor Server-Shutdown schützen" />`}
-      <div>
-        <div class="god-user-name">${escapeHtml(a.username)}${isMe ? ' 👑' : ''}</div>
-        <div class="god-user-email">${escapeHtml(a.email)}</div>
-      </div>
-      <span class="god-user-status ${isBanned ? 'god-status-banned' : ''}">${statusText}</span>
-      <div class="god-user-actions"></div>
-    `;
-    const checkbox = div.querySelector('.god-protect') as HTMLInputElement | null;
-    checkbox?.addEventListener('change', () => {
-      const u = checkbox.dataset.user!;
-      if (checkbox.checked) godProtectedUsers.add(u);
-      else godProtectedUsers.delete(u);
-    });
-    const actions = div.querySelector('.god-user-actions') as HTMLDivElement;
-    if (isMe) {
-      actions.innerHTML = '<span style="opacity:0.5;font-size:11px;">— du selbst —</span>';
-    } else if (isBanned) {
-      const undo = document.createElement('button');
-      undo.className = 'god-btn-small god-btn-undo';
-      undo.textContent = '🕊 Befreien';
-      undo.addEventListener('click', async () => {
-        await cloudBanUser(a.username_lower, null, '');
-        await renderGodList();
-      });
-      actions.appendChild(undo);
-    } else {
-      const opts: Array<{ label: string; ms: number | null }> = [
-        { label: '5min', ms: 5 * 60_000 },
-        { label: '30min', ms: 30 * 60_000 },
-        { label: '24h', ms: 24 * 60 * 60_000 },
-        { label: '🔨 Bannen', ms: 100 * 365 * 24 * 60 * 60_000 },
-      ];
-      for (const opt of opts) {
-        const b = document.createElement('button');
-        b.className = `god-btn-small ${opt.label.includes('Bannen') ? 'god-btn-danger' : ''}`;
-        b.textContent = opt.label;
-        b.addEventListener('click', async () => {
-          const reason = prompt(`Grund für ${opt.label}-Sperre auf ${a.username}?`) ?? '';
-          const until = opt.ms ? new Date(Date.now() + opt.ms) : null;
-          await cloudBanUser(a.username_lower, until, reason);
-          await renderGodList();
-        });
-        actions.appendChild(b);
-      }
-    }
-    list.appendChild(div);
+  for (const a of filtered) {
+    list.appendChild(buildAccountRow(a));
   }
+}
+
+function buildAccountRow(a: CloudAccount): HTMLDivElement {
+  const isBanned = !!(a.banned_until && new Date(a.banned_until) > new Date());
+  const isMe = a.username_lower === 'admin';
+  const online = isOnlineNow(a);
+  const div = document.createElement('div');
+  div.className = `god-user ${isBanned ? 'god-banned' : ''} ${online ? 'god-online' : ''}`;
+  const banText = isBanned
+    ? `🔨 Gesperrt bis ${new Date(a.banned_until!).toLocaleString('de-DE')}${a.banned_reason ? ` — ${escapeHtml(a.banned_reason)}` : ''}`
+    : '';
+  div.innerHTML = `
+    <div class="god-user-main">
+      <div class="god-user-icon">${online ? '🟢' : '⚫'}</div>
+      <div class="god-user-text">
+        <div class="god-user-name">${escapeHtml(a.username)}${isMe ? ' 👑 (du)' : ''}</div>
+        <div class="god-user-email">${escapeHtml(a.email)}</div>
+        <div class="god-user-meta">
+          Erstellt ${new Date(a.created_at).toLocaleDateString('de-DE')}
+          · Letzter Login ${relativeTime(a.last_login_at)}
+        </div>
+        ${banText ? `<div class="god-user-bantext">${banText}</div>` : ''}
+      </div>
+    </div>
+    <div class="god-user-actions"></div>
+  `;
+  const actions = div.querySelector('.god-user-actions') as HTMLDivElement;
+
+  if (isMe) {
+    actions.innerHTML = '<span class="god-self-note">🛡 du selbst</span>';
+    return div;
+  }
+
+  if (isBanned) {
+    const undo = document.createElement('button');
+    undo.className = 'god-btn-small god-btn-undo';
+    undo.textContent = '🕊 Befreien';
+    undo.addEventListener('click', async () => {
+      await cloudBanUser(a.username_lower, null, '');
+      await refreshAllGodData();
+    });
+    actions.appendChild(undo);
+  } else {
+    const banOpts: Array<{ label: string; ms: number | null }> = [
+      { label: '5min', ms: 5 * 60_000 },
+      { label: '30min', ms: 30 * 60_000 },
+      { label: '24h', ms: 24 * 60 * 60_000 },
+      { label: '🔨 Permanent', ms: 100 * 365 * 24 * 60 * 60_000 },
+    ];
+    for (const opt of banOpts) {
+      const b = document.createElement('button');
+      b.className = `god-btn-small ${opt.label.includes('Permanent') ? 'god-btn-danger' : ''}`;
+      b.textContent = opt.label;
+      b.addEventListener('click', async () => {
+        const reason = prompt(`Grund für ${opt.label}-Sperre auf ${a.username}?`) ?? '';
+        const until = opt.ms ? new Date(Date.now() + opt.ms) : null;
+        await cloudBanUser(a.username_lower, until, reason);
+        await refreshAllGodData();
+      });
+      actions.appendChild(b);
+    }
+  }
+
+  // Account existiert in der Cloud? Lokale-only Accounts haben leeren Hash.
+  const isInCloud = a.password_hash !== '';
+
+  // Pwd-Reset (Joyce kann fremde Pwds überschreiben)
+  const pwdBtn = document.createElement('button');
+  pwdBtn.className = 'god-btn-small';
+  pwdBtn.textContent = '🔑 Pwd';
+  pwdBtn.title = isInCloud
+    ? 'Neues Passwort für diesen Account setzen'
+    : 'Account existiert nur lokal — Pwd-Reset benötigt Cloud-Account';
+  pwdBtn.disabled = !isInCloud;
+  pwdBtn.addEventListener('click', async () => {
+    const newPwd = prompt(`Neues Passwort für ${a.username} (min 8 Zeichen, 1 Buchstabe + 1 Ziffer):`);
+    if (!newPwd) return;
+    const err = checkPasswordStrength(newPwd);
+    if (err) { alert(err); return; }
+    if (!confirm(`Passwort für ${a.username} wirklich überschreiben?\n\nDer User wird ausgesperrt bis du ihm das neue Pwd verrätst.`)) return;
+    const salt = generateSalt();
+    const hash = await hashPasswordPBKDF2(newPwd, salt, PBKDF2_CURRENT_ITERATIONS);
+    const ok = await cloudResetAccountPassword(a.username_lower, hash, salt, PBKDF2_CURRENT_ALGO);
+    if (ok) {
+      alert(`✅ Pwd von ${a.username} überschrieben.\n\nNeues Pwd: ${newPwd}`);
+    } else {
+      alert(`❌ Konnte Pwd nicht überschreiben (Cloud-Fehler).`);
+    }
+    await refreshAllGodData();
+  });
+  actions.appendChild(pwdBtn);
+
+  // Account löschen (einzeln)
+  const delBtn = document.createElement('button');
+  delBtn.className = 'god-btn-small god-btn-danger';
+  delBtn.textContent = '🗑';
+  delBtn.title = isInCloud
+    ? 'Account permanent löschen (Cloud)'
+    : 'Lokalen Account löschen';
+  delBtn.addEventListener('click', async () => {
+    if (!confirm(`Account "${a.username}" (${a.email}) wirklich permanent löschen?\n\nDas kann nicht rückgängig gemacht werden.`)) return;
+    if (isInCloud) {
+      await cloudDeleteAccount(a.username_lower);
+    } else {
+      // Lokal-Only → aus localStorage entfernen
+      const all = loadAccounts();
+      delete all[a.username_lower];
+      try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(all)); } catch { /* */ }
+    }
+    await refreshAllGodData();
+  });
+  actions.appendChild(delBtn);
+
+  return div;
+}
+
+function renderSessionsList() {
+  const list = document.getElementById('god-sessions-list') as HTMLDivElement | null;
+  if (!list) return;
+  if (cachedSessions.length === 0) {
+    list.innerHTML = '<p class="god-empty">Keine aktiven Multiplayer-Runden.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const s of cachedSessions) {
+    const row = document.createElement('div');
+    row.className = 'god-session';
+    row.innerHTML = `
+      <div class="god-session-info">
+        <div class="god-session-code">🎲 ${escapeHtml(s.code)}</div>
+        <div class="god-session-meta">
+          Host: ${escapeHtml(s.host_user)}
+          · ${s.player_count} Held${s.player_count === 1 ? '' : 'en'}
+          · ${escapeHtml(s.age_mode)}
+          · gestartet ${relativeTime(s.created_at)}
+        </div>
+        ${s.adventure_prompt ? `<div class="god-session-theme">📖 ${escapeHtml(s.adventure_prompt)}</div>` : ''}
+      </div>
+      <div class="god-session-actions">
+        <button type="button" class="god-btn-small" data-action="players">👥 Spieler</button>
+        <button type="button" class="god-btn-small god-btn-danger" data-action="close">✕ Schließen</button>
+      </div>
+    `;
+    row.querySelector<HTMLButtonElement>('[data-action="close"]')?.addEventListener('click', async () => {
+      if (!confirm(`Runde ${s.code} wirklich beenden? Alle Spieler werden rausgeworfen.`)) return;
+      await cloudCloseSession(s.id);
+      await refreshAllGodData();
+    });
+    row.querySelector<HTMLButtonElement>('[data-action="players"]')?.addEventListener('click', async () => {
+      await showSessionPlayers(s);
+    });
+    list.appendChild(row);
+  }
+}
+
+async function showSessionPlayers(s: MpSessionWithCount) {
+  const players = await cloudListPlayersForSession(s.id);
+  if (players.length === 0) {
+    alert(`Runde ${s.code} hat aktuell keine Helden.`);
+    return;
+  }
+  const lines = players.map((p) =>
+    `• ${p.player_name} (${p.player_class}) — HP ${p.hp}/${p.max_hp} — User: ${p.user_name}`,
+  );
+  const choice = prompt(
+    `Helden in Runde ${s.code}:\n\n${lines.join('\n')}\n\nUm einen Helden zu kicken: tippe seinen Namen. Sonst leer lassen.`,
+  );
+  if (!choice) return;
+  const target = players.find((p) => p.player_name.toLowerCase() === choice.trim().toLowerCase());
+  if (!target) { alert('Kein Held mit diesem Namen.'); return; }
+  if (!confirm(`Held "${target.player_name}" aus Runde ${s.code} kicken?`)) return;
+  await cloudKickPlayer(target.id);
+  await refreshAllGodData();
+}
+
+function renderProtectList() {
+  const el = document.getElementById('god-protect-list') as HTMLDivElement | null;
+  if (!el) return;
+  const others = cachedAccounts.filter((a) => a.username_lower !== 'admin');
+  if (others.length === 0) {
+    el.innerHTML = '<p class="god-empty">Außer dir gibt\'s niemanden.</p>';
+    return;
+  }
+  el.innerHTML = '';
+  for (const a of others) {
+    const lbl = document.createElement('label');
+    lbl.className = 'god-protect-row';
+    const isProtected = godProtectedUsers.has(a.username_lower);
+    lbl.innerHTML = `
+      <input type="checkbox" data-user="${a.username_lower}" ${isProtected ? 'checked' : ''} />
+      <span>${escapeHtml(a.username)} <small>${escapeHtml(a.email)}</small></span>
+    `;
+    const cb = lbl.querySelector('input') as HTMLInputElement;
+    cb.addEventListener('change', () => {
+      if (cb.checked) godProtectedUsers.add(a.username_lower);
+      else godProtectedUsers.delete(a.username_lower);
+    });
+    el.appendChild(lbl);
+  }
+}
+
+async function runShutdown() {
+  if (!isGodUser()) return;
+  const protectedList = ['admin', ...Array.from(godProtectedUsers)];
+  const toDelete = cachedAccounts.filter((a) => !protectedList.includes(a.username_lower));
+  const namesPreview = toDelete.map((a) => a.username).join(', ') || '(niemand)';
+  if (!confirm(`💀 SERVER-SHUTDOWN\n\nWird unwiderruflich GELÖSCHT:\n• Alle Spielrunden + Chat-Verläufe + Inventare\n• ${toDelete.length} User-Accounts: ${namesPreview}\n\nGeschützt: ${protectedList.join(', ')}\n\nWirklich? Das kann nicht rückgängig gemacht werden.`)) return;
+  const finalConfirm = prompt('Tippe "SHUTDOWN" zum bestätigen:');
+  if (finalConfirm !== 'SHUTDOWN') return;
+  void broadcastShutdown();
+  showGlitchOverlay({ allowOverride: true });
+  void (async () => {
+    await cloudWipeAllSessions();
+    for (const a of toDelete) await cloudDeleteAccount(a.username_lower);
+    console.log('💀 Wipe complete');
+    godProtectedUsers.clear();
+    await refreshAllGodData();
+  })();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1481,12 +2224,12 @@ async function renderGodList() {
 // automatisch ausgeloggt. Schutz wenn er PC offen lässt.
 // ────────────────────────────────────────────────────────────
 
-const INACTIVITY_LOCK_MS = 5 * 60 * 1000;
+const INACTIVITY_LOCK_MS = 20 * 60 * 1000;
 let inactivityTimer: number | null = null;
 let inactivityHandlersBound = false;
 
 function isAccountWithLock(): boolean {
-  return currentUser?.toLowerCase() === 'ben';
+  return currentUser?.toLowerCase() === 'admin';
 }
 
 function resetInactivityTimer() {
@@ -1496,7 +2239,7 @@ function resetInactivityTimer() {
     stopSpeaking();
     saveGame();
     clearSession();
-    alert('🔒 5 Minuten keine Aktivität — automatisch abgemeldet (nur Ben-Account).');
+    alert('🔒 20 Minuten keine Aktivität — automatisch abgemeldet (Admin-Account).');
     location.reload();
   }, INACTIVITY_LOCK_MS);
 }
@@ -1764,7 +2507,7 @@ function setupLobbyModal() {
 
   startBtn?.addEventListener('click', () => {
     hideLobbyModal();
-    beginAdventure();
+    void beginAdventure();
   });
 }
 
@@ -2024,7 +2767,7 @@ function setupModal() {
 
 async function onCharsReady() {
   if (gameMode === 'solo') {
-    beginAdventure();
+    void beginAdventure();
     return;
   }
 
@@ -2066,7 +2809,7 @@ async function onCharsReady() {
       console.error(err);
       alert(`Konnte Runde nicht erstellen: ${(err as Error).message}\n\nFallback: Solo-Modus.`);
       gameMode = 'solo';
-      beginAdventure();
+      void beginAdventure();
     }
     return;
   }
@@ -2076,7 +2819,7 @@ async function onCharsReady() {
     if (!mpSession) {
       alert('Keine Session geladen. Wechsle zu Solo.');
       gameMode = 'solo';
-      beginAdventure();
+      void beginAdventure();
       return;
     }
     try {
@@ -2120,7 +2863,7 @@ async function onCharsReady() {
       attachMultiplayerSubscription();
       hideCharModal();
       // Direkt ins Spiel — Host hat es schon gestartet
-      beginAdventureAsGuest(history);
+      void beginAdventureAsGuest(history);
     } catch (err) {
       console.error(err);
       alert(`Konnte nicht beitreten: ${(err as Error).message}`);
@@ -2216,6 +2959,9 @@ function handleRemoteMessage(msg: MpMessage) {
     parseInventoryLoss(msg.content);
     parseDamage(msg.content);
     parseHeal(msg.content);
+    parseQuests(msg.content);
+    parseLocation(msg.content);
+    parseStoryBeats(msg.content);
     messages.push({ role: 'assistant', content: msg.content });
   }
 }
@@ -2266,9 +3012,11 @@ function handleRemoteInventory(
   void it; void type; // unused
 }
 
-function beginAdventureAsGuest(history: MpMessage[]) {
+async function beginAdventureAsGuest(history: MpMessage[]) {
   activePlayerId = players[0].id;
   $<HTMLElement>('#app').hidden = false;
+  // Long-Term-Memory: Beats für Session-Scope laden bevor System-Prompt gebaut wird.
+  await loadStoryBeatsForCurrentScope();
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   renderMessagesArea(true);
   renderPlayersSidebar();
@@ -2298,14 +3046,22 @@ function beginAdventureAsGuest(history: MpMessage[]) {
   setStatus(`Multiplayer · Beigetreten: ${mpSession?.code ?? ''}`, 'ok');
 }
 
-function beginAdventure() {
+async function beginAdventure() {
   activePlayerId = players[0].id;
   hideCharModal();
   $<HTMLElement>('#app').hidden = false;
 
+  // Long-Term-Memory: Beats für diesen Scope laden bevor System-Prompt gebaut wird.
+  await loadStoryBeatsForCurrentScope();
+
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   inventory.length = 0;
+  quests.length = 0;
+  currentLocation = '';
+  currentLocationImage = '';
+  clearLocationBanner();
   renderInventory();
+  renderQuests();
   renderMessagesArea(true);
   renderPlayersSidebar();
   renderPlayerSelector();
@@ -2318,14 +3074,23 @@ function beginAdventure() {
   void checkLmStudioStatus().then(() => sendToLMStudio(intro, 'Erzähler'));
 }
 
-function resumeGame(save: GameSave) {
+async function resumeGame(save: GameSave) {
   showGodButton();
   ageMode = save.ageMode;
   adventurePrompt = save.adventurePrompt ?? '';
   players = save.players;
   inventory.length = 0;
   inventory.push(...save.inventory);
+  quests.length = 0;
+  if (save.quests) quests.push(...save.quests);
+  currentLocation = save.currentLocation ?? '';
+  currentLocationImage = '';
+  if (currentLocation) updateLocationBanner(currentLocation);
   activePlayerId = save.activePlayerId || (players[0]?.id ?? '');
+
+  // Long-Term-Memory: Story-Beats für aktuellen Scope laden, BEVOR
+  // der System-Prompt gebaut wird (sonst fehlt der Memory-Block).
+  await loadStoryBeatsForCurrentScope();
 
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   for (const m of save.messages) {
@@ -2373,6 +3138,7 @@ function resumeGame(save: GameSave) {
   }
 
   renderInventory();
+  renderQuests();
   renderPlayersSidebar();
   renderPlayerSelector();
   updateUserChip();
@@ -2559,7 +3325,15 @@ function setStatus(text: string, kind: 'ok' | 'error' | 'busy') {
 }
 
 let saveToastTimer: number | null = null;
+let lastSuccessToastAt = 0;
+const SUCCESS_TOAST_THROTTLE_MS = 60_000; // max 1× pro Minute
 function showSaveToast(text: string = '💾 Gespeichert', isError: boolean = false) {
+  // Erfolgs-Toasts drosseln — sonst Spam bei jedem Auto-Save.
+  if (!isError) {
+    const now = Date.now();
+    if (now - lastSuccessToastAt < SUCCESS_TOAST_THROTTLE_MS) return;
+    lastSuccessToastAt = now;
+  }
   let toast = document.getElementById('save-toast') as HTMLDivElement | null;
   if (!toast) {
     toast = document.createElement('div');
@@ -2575,6 +3349,30 @@ function showSaveToast(text: string = '💾 Gespeichert', isError: boolean = fal
   saveToastTimer = window.setTimeout(() => {
     toast?.classList.remove('show');
   }, duration);
+}
+
+// Toast für "Neue App-Version verfügbar" (Service Worker).
+function showUpdateToast(newWorker: ServiceWorker) {
+  let toast = document.getElementById('update-toast') as HTMLDivElement | null;
+  if (toast) return; // schon offen
+  toast = document.createElement('div');
+  toast.id = 'update-toast';
+  toast.className = 'update-toast';
+  toast.innerHTML = `
+    <span>✨ Neue Version verfügbar</span>
+    <button type="button" id="update-reload-btn">Neu laden</button>
+    <button type="button" id="update-dismiss-btn" title="Später">✕</button>
+  `;
+  document.body.appendChild(toast);
+  toast.querySelector('#update-reload-btn')?.addEventListener('click', () => {
+    // SW soll jetzt aktivieren — controllerchange-Listener reloadt automatisch
+    newWorker.postMessage({ type: 'skip-waiting' });
+  });
+  toast.querySelector('#update-dismiss-btn')?.addEventListener('click', () => {
+    toast?.remove();
+  });
+  // Animation rein
+  requestAnimationFrame(() => toast?.classList.add('show'));
 }
 
 interface LmStatus {
@@ -2844,6 +3642,9 @@ async function sendToLMStudio(userText: string, speaker: string) {
     parseInventoryLoss(fullText);
     parseDamage(fullText);
     parseHeal(fullText);
+    parseQuests(fullText);
+    parseLocation(fullText);
+    parseStoryBeats(fullText);
     const diceRequests = parseDiceRequests(fullText);
     const events = extractDmEvents(fullText);
     dmBody.textContent = stripGameTags(fullText);
@@ -3064,19 +3865,273 @@ function findPlayerByName(name: string): Player | undefined {
   );
 }
 
+// ⚔ Floating-Number-Animation auf einer Player-Card.
+// kind = 'dmg' (rot, -) oder 'heal' (grün, +).
+function spawnFloatNumber(playerId: string, amount: number, kind: 'dmg' | 'heal') {
+  const card = document.querySelector(`.player-card[data-id="${playerId}"]`);
+  if (!card) return;
+  const el = document.createElement('div');
+  el.className = `float-number ${kind}`;
+  el.textContent = kind === 'dmg' ? `-${amount}` : `+${amount}`;
+  card.appendChild(el);
+  // Card-Shake + Flash bei Treffer
+  if (kind === 'dmg') {
+    card.classList.remove('hit', 'flash');
+    // Reflow erzwingen, damit Animation neu startet
+    void (card as HTMLElement).offsetWidth;
+    card.classList.add('hit', 'flash');
+  }
+  window.setTimeout(() => el.remove(), 1200);
+}
+
+// Bildschirm-Shake bei großem Treffer (>15 HP).
+function triggerScreenShake() {
+  document.body.classList.remove('crit-shake');
+  void document.body.offsetWidth;
+  document.body.classList.add('crit-shake');
+  window.setTimeout(() => document.body.classList.remove('crit-shake'), 450);
+}
+
+// ─── Quest-Log ───────────────────────────────────────────────
+// DM markiert neue Aufträge mit [QUEST: <Text>] und erledigte mit
+// [QUEST-ERFOLG: <Suchwort>]. Suchwort = beliebige Wörter aus dem
+// ursprünglichen Quest-Text (case-insensitive substring match).
+
+function questId(): string {
+  return 'q_' + Math.random().toString(36).slice(2, 8);
+}
+
+function addQuest(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  // Duplikate vermeiden — falls DM denselben Quest-Text wiederholt.
+  const existing = quests.find(
+    (q) => !q.done && q.text.toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (existing) return;
+  quests.push({ id: questId(), text: trimmed, done: false, addedAt: Date.now() });
+}
+
+function completeQuestByMatch(needle: string): Quest | null {
+  const n = needle.trim().toLowerCase();
+  if (!n) return null;
+  const open = quests.filter((q) => !q.done);
+  const target = open.find((q) => q.text.toLowerCase().includes(n))
+    ?? open.find((q) => n.includes(q.text.toLowerCase().slice(0, 12)));
+  if (target) {
+    target.done = true;
+    return target;
+  }
+  return null;
+}
+
+// Kleine "Quest erledigt"-Feier — Sound + dedizierter Toast (umgeht Save-Throttle).
+function celebrateQuest(text: string) {
+  try { playItemPickup(); } catch { /* */ }
+  const short = text.length > 40 ? text.slice(0, 40) + '…' : text;
+  let toast = document.getElementById('quest-toast') as HTMLDivElement | null;
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'quest-toast';
+    toast.className = 'quest-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = `✅ Auftrag erledigt: ${short}`;
+  toast.classList.remove('show');
+  void toast.offsetWidth; // Reflow → Animation neu starten
+  toast.classList.add('show');
+  window.setTimeout(() => toast?.classList.remove('show'), 2400);
+}
+
+function parseQuests(text: string) {
+  let changed = false;
+  const addRe = /\[QUEST:\s*([^\]]+?)\s*\]/gi;
+  let m: RegExpExecArray | null;
+  while ((m = addRe.exec(text)) !== null) {
+    const before = quests.length;
+    addQuest(m[1]);
+    if (quests.length !== before) changed = true;
+  }
+  const doneRe = /\[QUEST-ERFOLG:\s*([^\]]+?)\s*\]/gi;
+  while ((m = doneRe.exec(text)) !== null) {
+    const completed = completeQuestByMatch(m[1]);
+    if (completed) {
+      changed = true;
+      celebrateQuest(completed.text);
+    }
+  }
+  if (changed) renderQuests();
+}
+
+function renderQuests() {
+  const el = document.getElementById('quest-list') as HTMLUListElement | null;
+  if (!el) return;
+  el.innerHTML = '';
+  if (quests.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'Noch keine Aufträge…';
+    el.appendChild(li);
+    return;
+  }
+  // Offen zuerst, dann erledigt
+  const sorted = [...quests].sort((a, b) => Number(a.done) - Number(b.done));
+  for (const q of sorted) {
+    const li = document.createElement('li');
+    li.className = 'quest-item' + (q.done ? ' quest-done' : '');
+    li.textContent = (q.done ? '✔ ' : '◇ ') + q.text;
+    el.appendChild(li);
+  }
+}
+
+// ─── Long-Term-Memory: Story-Beats ───────────────────────────
+// Pro Szenario (Solo: user+slot, MP: session) speichern wir kurze
+// Erinnerungen die der DM mit [ERINNERN:] markiert. Beim Spielstart
+// werden die letzten ~20 Beats in den System-Prompt geprependet.
+
+let loadedStoryBeats: string[] = [];
+
+function currentScopeKey(): string | null {
+  if (gameMode !== 'solo' && mpSession) {
+    return `mp:${mpSession.id}`;
+  }
+  if (currentUser) {
+    return `solo:${currentUser.toLowerCase()}:${activeSaveSlot}`;
+  }
+  return null;
+}
+
+function parseStoryBeats(text: string) {
+  const re = /\[ERINNERN:\s*([^\]]+?)\s*\]/gi;
+  let m: RegExpExecArray | null;
+  const scope = currentScopeKey();
+  while ((m = re.exec(text)) !== null) {
+    const beat = m[1].trim();
+    if (!beat) continue;
+    // Lokal sofort sichtbar (verhindert Doppel-Inserts beim Resume)
+    loadedStoryBeats.push(beat);
+    if (loadedStoryBeats.length > 30) loadedStoryBeats.shift();
+    if (scope) void cloudInsertStoryBeat(scope, beat);
+  }
+}
+
+async function loadStoryBeatsForCurrentScope() {
+  loadedStoryBeats = [];
+  const scope = currentScopeKey();
+  if (!scope) return;
+  try {
+    const beats = await cloudListStoryBeats(scope, 20);
+    loadedStoryBeats = beats.map((b) => b.content);
+  } catch { /* */ }
+}
+
+function buildStoryBeatsBlock(): string {
+  if (loadedStoryBeats.length === 0) return '';
+  const list = loadedStoryBeats.map((b) => `• ${b}`).join('\n');
+  return `\n\nVORHER PASSIERT (frühere Erinnerungen — beziehe dich darauf wenn passend):\n${list}\n`;
+}
+
+// ─── Karten-Generator ────────────────────────────────────────
+// DM markiert neuen Ort mit [ORT: <englischer Beschreibungs-Prompt>].
+// Beim ersten Auftauchen wird via Pollinations ein Banner-Bild geholt.
+
+function locationSeed(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return Math.abs(h) % 1000000;
+}
+
+function buildLocationImageUrl(loc: string): string {
+  const prompt = `dark fantasy landscape painting of ${loc}, cinematic dramatic lighting, mist, detailed atmospheric, no text no watermark`;
+  const seed = locationSeed(loc);
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=720&height=240&model=flux&seed=${seed}&nologo=true`;
+}
+
+function ensureLocationBannerEl(): HTMLDivElement | null {
+  let banner = document.getElementById('location-banner') as HTMLDivElement | null;
+  if (banner) return banner;
+  const messagesEl = document.getElementById('messages');
+  if (!messagesEl || !messagesEl.parentElement) return null;
+  banner = document.createElement('div');
+  banner.id = 'location-banner';
+  banner.className = 'location-banner';
+  banner.hidden = true;
+  messagesEl.parentElement.insertBefore(banner, messagesEl);
+  return banner;
+}
+
+function updateLocationBanner(loc: string) {
+  const banner = ensureLocationBannerEl();
+  if (!banner) return;
+  const url = buildLocationImageUrl(loc);
+  if (currentLocationImage === url) return;
+  currentLocationImage = url;
+  banner.hidden = false;
+  // Skeleton + Label sofort zeigen, Bild lädt asynchron drüber.
+  banner.innerHTML = `
+    <div class="location-banner-skeleton"></div>
+    <img class="location-banner-img" alt="${escapeHtml(loc)}" loading="lazy" />
+    <div class="location-banner-label">📍 ${escapeHtml(loc)}</div>
+  `;
+  const img = banner.querySelector('.location-banner-img') as HTMLImageElement | null;
+  if (img) {
+    img.addEventListener('load', () => {
+      img.classList.add('loaded');
+      const skeleton = banner.querySelector('.location-banner-skeleton');
+      skeleton?.remove();
+    }, { once: true });
+    img.addEventListener('error', () => {
+      // Wenn das Pollinations-Bild nicht lädt: Banner verstecken statt kaputtem Bild.
+      console.warn('[ORT] Bild konnte nicht geladen werden:', url);
+      banner.hidden = true;
+      currentLocationImage = '';
+    }, { once: true });
+    img.src = url;
+  }
+}
+
+function clearLocationBanner() {
+  const banner = document.getElementById('location-banner') as HTMLDivElement | null;
+  if (banner) {
+    banner.hidden = true;
+    banner.innerHTML = '';
+  }
+  currentLocationImage = '';
+}
+
+function parseLocation(text: string) {
+  // Wenn die DM mehrere [ORT:]-Tags emittiert, nehmen wir den LETZTEN
+  // (= der zuletzt betretene Schauplatz innerhalb dieser Antwort).
+  const re = /\[ORT:\s*([^\]]+?)\s*\]/gi;
+  let m: RegExpExecArray | null;
+  let lastLoc: string | null = null;
+  while ((m = re.exec(text)) !== null) {
+    lastLoc = m[1].trim();
+  }
+  if (!lastLoc) return;
+  if (lastLoc.toLowerCase() === currentLocation.toLowerCase()) return;
+  currentLocation = lastLoc;
+  updateLocationBanner(lastLoc);
+}
+
 function parseDamage(text: string) {
   const regex = /\[SCHADEN:\s*([^\-\]]+?)\s*-\s*(\d{1,3})\s*\]/gi;
   let match;
   let changed = false;
   let knockedOut = false;
+  let maxHit = 0;
+  const animations: Array<{ id: string; amount: number }> = [];
   while ((match = regex.exec(text)) !== null) {
     const name = match[1].trim();
     const target = findPlayerByName(name);
     const amount = parseInt(match[2], 10);
     if (target && amount > 0) {
       const wasAlive = target.hp > 0;
+      const actualHit = Math.min(amount, target.hp);
       target.hp = Math.max(0, target.hp - amount);
       if (wasAlive && target.hp === 0) knockedOut = true;
+      animations.push({ id: target.id, amount });
+      if (actualHit > maxHit) maxHit = actualHit;
       changed = true;
     } else if (!target) {
       console.warn(`[Tag-Parser] [SCHADEN: ${name}] — kein Held mit diesem Namen, ignoriert.`);
@@ -3086,6 +4141,11 @@ function parseDamage(text: string) {
     if (knockedOut) playKnockout();
     else playDamage();
     renderPlayersSidebar();
+    // Animationen erst nach dem Re-Render auslösen, damit die Cards existieren.
+    requestAnimationFrame(() => {
+      for (const a of animations) spawnFloatNumber(a.id, a.amount, 'dmg');
+    });
+    if (maxHit >= 15) triggerScreenShake();
   }
 }
 
@@ -3093,12 +4153,14 @@ function parseHeal(text: string) {
   const regex = /\[HEILUNG:\s*([^\+\]]+?)\s*\+\s*(\d{1,3})\s*\]/gi;
   let match;
   let changed = false;
+  const animations: Array<{ id: string; amount: number }> = [];
   while ((match = regex.exec(text)) !== null) {
     const name = match[1].trim();
     const target = findPlayerByName(name);
     const amount = parseInt(match[2], 10);
     if (target && amount > 0) {
       target.hp = Math.min(target.maxHp, target.hp + amount);
+      animations.push({ id: target.id, amount });
       changed = true;
     } else if (!target) {
       console.warn(`[Tag-Parser] [HEILUNG: ${name}] — kein Held mit diesem Namen, ignoriert.`);
@@ -3107,6 +4169,9 @@ function parseHeal(text: string) {
   if (changed) {
     playHeal();
     renderPlayersSidebar();
+    requestAnimationFrame(() => {
+      for (const a of animations) spawnFloatNumber(a.id, a.amount, 'heal');
+    });
   }
 }
 
@@ -3227,6 +4292,9 @@ function stripGameTags(text: string): string {
     .replace(/\[SCHADEN:\s*[^\]]+\]/gi, '')
     .replace(/\[HEILUNG:\s*[^\]]+\]/gi, '')
     .replace(/\[W(?:ÜRFEL|URFEL|UERFEL):\s*[^\]]+\]/gi, '')
+    .replace(/\[QUEST(?:-ERFOLG)?:\s*[^\]]+\]/gi, '')
+    .replace(/\[ORT:\s*[^\]]+\]/gi, '')
+    .replace(/\[ERINNERN:\s*[^\]]+\]/gi, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\s+([.,;:!?])/g, '$1')
     .trim();
@@ -3281,6 +4349,8 @@ function renderPlayersSidebar() {
     li.style.borderLeft = `4px solid ${p.color}`;
     if (p.id === activePlayerId) li.classList.add('active');
     if (p.hp === 0) li.classList.add('downed');
+    // Pulsierender roter Rand wenn HP < 25% (aber noch lebendig).
+    else if (p.maxHp > 0 && p.hp / p.maxHp < 0.25) li.classList.add('low-hp');
 
     const downedBadge = p.hp === 0
       ? '<div class="downed-badge">💀 Bewusstlos</div>'
@@ -3415,9 +4485,16 @@ function setupInputForm() {
     currentAbortController?.abort();
     saveGame();
     clearSession();
+    showGodButton(); // Versteckt den Gott-Knopf — currentUser ist jetzt null
+    closeGodModal();
     players = [];
     messages = [];
     inventory.length = 0;
+    quests.length = 0;
+    currentLocation = '';
+    currentLocationImage = '';
+    clearLocationBanner();
+    renderQuests();
     adventurePrompt = '';
     activePlayerId = '';
     activeFormPlayerId = '';
@@ -3427,12 +4504,22 @@ function setupInputForm() {
 
   const newRunBtn = document.getElementById('new-run-btn') as HTMLButtonElement | null;
   newRunBtn?.addEventListener('click', () => {
-    if (!confirm('Neue Runde starten? Der aktuelle Spielstand geht verloren.')) return;
+    if (!confirm('Neue Runde starten? Der aktuelle Spielstand und die Erinnerungen gehen verloren.')) return;
     currentAbortController?.abort();
+    // Long-Term-Memory für diesen Scope ebenfalls löschen — sonst bleibt
+    // die alte Welt-Erinnerung im neuen Spiel hängen.
+    const scope = currentScopeKey();
+    if (scope) void cloudClearStoryBeats(scope);
+    loadedStoryBeats = [];
     clearGame();
     players = [];
     messages = [];
     inventory.length = 0;
+    quests.length = 0;
+    currentLocation = '';
+    currentLocationImage = '';
+    clearLocationBanner();
+    renderQuests();
     adventurePrompt = '';
     activePlayerId = '';
     activeFormPlayerId = '';
@@ -3700,7 +4787,70 @@ function showUpdateBanner(newVersion: string, releaseUrl: string) {
 // Init
 // ────────────────────────────────────────────────────────────
 
+// Einmalige Migration: alter Username 'ben' wird zu 'admin'.
+// Läuft bei jedem Start im Hintergrund — idempotent.
+async function migrateBenToAdmin(): Promise<void> {
+  // Lokale Migration
+  try {
+    const accounts = loadAccounts();
+    const oldAcct = accounts[LEGACY_ADMIN_USERNAME];
+    if (oldAcct && !accounts['admin']) {
+      // Sicherheitscheck: nur migrieren wenn die E-Mail zum bekannten Admin-Konto passt.
+      if (oldAcct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase()) {
+        const renamed: StoredAccount = { ...oldAcct, username: 'admin' };
+        delete accounts[LEGACY_ADMIN_USERNAME];
+        accounts['admin'] = renamed;
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+
+        // Spielstand-Key umbenennen
+        const oldGameKey = GAME_KEY_PREFIX + LEGACY_ADMIN_USERNAME;
+        const oldSave = localStorage.getItem(oldGameKey);
+        if (oldSave) {
+          localStorage.setItem(GAME_KEY_PREFIX + 'admin', oldSave);
+          localStorage.removeItem(oldGameKey);
+        }
+
+        // Session-Pointer umbiegen
+        const sess = localStorage.getItem(SESSION_KEY);
+        if (sess && sess.toLowerCase() === LEGACY_ADMIN_USERNAME) {
+          localStorage.setItem(SESSION_KEY, 'admin');
+        }
+
+        // Login-Fehlversuche unter altem Namen fallen lassen
+        const fails = loadLoginAttempts();
+        if (fails[LEGACY_ADMIN_USERNAME]) {
+          delete fails[LEGACY_ADMIN_USERNAME];
+          saveLoginAttempts(fails);
+        }
+        console.log('✅ Account "ben" lokal zu "admin" migriert');
+      }
+    }
+  } catch (e) {
+    console.warn('Lokale Migration "ben" → "admin" fehlgeschlagen:', e);
+  }
+
+  // Cloud-Migration — best effort, blockiert die App nicht.
+  try {
+    const result = await cloudRenameAccount(LEGACY_ADMIN_USERNAME, 'admin', 'admin');
+    if (result.ok) {
+      console.log('✅ Cloud-Account "ben" zu "admin" migriert');
+    } else if (
+      result.reason &&
+      result.reason !== 'old-missing' &&
+      result.reason !== 'target-exists' &&
+      result.reason !== 'no-cloud'
+    ) {
+      console.warn('Cloud-Migration "ben" → "admin":', result.reason);
+    }
+  } catch (e) {
+    console.warn('Cloud-Migration "ben" → "admin":', e);
+  }
+}
+
 function init() {
+  // Migration läuft im Hintergrund — Login-Screen wird sofort gezeigt
+  void migrateBenToAdmin();
+
   setupLoginTabs();
   setupLoginForm();
   setupRegisterForm();
@@ -3715,12 +4865,13 @@ function init() {
   setupJoinModal();
   setupLobbyModal();
   setupGodMode();
+  setupSlotModal();
 
-  // 💀 Broadcast-Listener: wenn Ben Server-Shutdown triggert, sehen ALLE
+  // 💀 Broadcast-Listener: wenn Admin Server-Shutdown triggert, sehen ALLE
   // anderen User die creepy Animation und können nur mit Admin-Pwd entkommen
   subscribeToGlobalEvents({
     onShutdown: () => {
-      const isAdmin = currentUser?.toLowerCase() === 'ben';
+      const isAdmin = currentUser?.toLowerCase() === 'admin';
       showGlitchOverlay({ allowOverride: !isAdmin });  // andere brauchen Pwd
     },
   });
@@ -3734,8 +4885,33 @@ function init() {
   // Nur in Production (sonst kollidiert mit Vite-HMR)
   if ('serviceWorker' in navigator && !import.meta.env.DEV) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        // Wenn SW eine neue Version findet, "Update available"-Toast zeigen.
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateToast(newWorker);
+            }
+          });
+        });
+        // Alle 30 Min nach Updates suchen, falls Tab lange offen bleibt.
+        setInterval(() => { reg.update().catch(() => { /* */ }); }, 30 * 60_000);
+      }).catch((err) => {
         console.warn('Service Worker Registration fehlgeschlagen:', err);
+      });
+      // Wenn der neue SW gewonnen hat (clients.claim), Tab automatisch reload.
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        location.reload();
+      });
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data?.type === 'sw-updated') {
+          console.log('🔄 Service Worker aktualisiert auf', e.data.version);
+        }
       });
     });
   }
@@ -3778,7 +4954,7 @@ function init() {
     hideLoginScreen();
     const save = loadGame();
     if (save) {
-      resumeGame(save);
+      void resumeGame(save);
     } else {
       showCharModal();
     }

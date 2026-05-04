@@ -4,11 +4,12 @@
  *   - API-Calls (Groq, Pollinations, EmailJS): network-only (nie cachen)
  *   - Navigation: network-first mit Offline-Fallback auf cached index.html
  *
- * Cache-Version bumpen wenn Asset-Layout sich ändert,
- * oder wenn man alte Caches forcieren will.
+ * CACHE_VERSION wird beim Build automatisch durch package.json-Version
+ * ersetzt (siehe vite.config.ts -> swVersionPlugin). Jedes Release bumpt
+ * den Cache, alte Caches werden im activate-Event gelöscht.
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = '__SW_VERSION__'; // wird beim Build ersetzt
 const CACHE_NAME = `valdermoor-${CACHE_VERSION}`;
 
 // Mindest-Assets die beim Install gecached werden (App-Shell).
@@ -42,13 +43,29 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
         keys.filter((k) => k.startsWith('valdermoor-') && k !== CACHE_NAME)
-            .map((k) => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())
+            .map((k) => caches.delete(k)),
+      );
+      await self.clients.claim();
+      // Nach Cache-Wechsel: alle offenen Tabs per postMessage informieren,
+      // damit die App eine "Neue Version geladen"-Meldung anzeigen kann.
+      const clientList = await self.clients.matchAll({ type: 'window' });
+      for (const client of clientList) {
+        client.postMessage({ type: 'sw-updated', version: CACHE_VERSION });
+      }
+    })(),
   );
+});
+
+// Erlaubt der App, sofortiges Aktivieren zu triggern (z.B. nach Bestätigung
+// "Neu laden" in der UI).
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'skip-waiting') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {

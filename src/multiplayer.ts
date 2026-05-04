@@ -81,6 +81,7 @@ export interface CloudAccount {
   created_at: string;
   banned_until?: string | null;
   banned_reason?: string | null;
+  last_login_at?: string | null;
 }
 
 export async function cloudGetAccount(usernameLower: string): Promise<CloudAccount | null> {
@@ -150,12 +151,135 @@ export async function cloudBanUser(usernameLower: string, until: Date | null, re
   return true;
 }
 
+// Update last_login_at — Best-Effort. Fail-soft wenn Column fehlt.
+let lastLoginColumnAvailable: boolean | null = null;
+export async function cloudTouchLastLogin(usernameLower: string): Promise<void> {
+  if (!isMultiplayerAvailable()) return;
+  if (lastLoginColumnAvailable === false) return;
+  const supa = getClient();
+  const { error } = await supa
+    .from('accounts')
+    .update({ last_login_at: new Date().toISOString() })
+    .eq('username_lower', usernameLower);
+  if (error) {
+    if (error.code === 'PGRST204' || /last_login_at/i.test(error.message)) {
+      if (lastLoginColumnAvailable === null) {
+        console.warn('[Admin] last_login_at-Column fehlt — schema.sql in Supabase laufen lassen.');
+      }
+      lastLoginColumnAvailable = false;
+    }
+    return;
+  }
+  lastLoginColumnAvailable = true;
+}
+
+// Passwort eines fremden Accounts überschreiben (Joyce-Gott-Power).
+export async function cloudResetAccountPassword(
+  usernameLower: string,
+  passwordHash: string,
+  passwordSalt: string,
+  passwordAlgo: string,
+): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa
+    .from('accounts')
+    .update({ password_hash: passwordHash, password_salt: passwordSalt, password_algo: passwordAlgo })
+    .eq('username_lower', usernameLower);
+  if (error) {
+    console.warn('cloudResetAccountPassword:', error.message);
+    return false;
+  }
+  return true;
+}
+
+// Aktive (nicht geschlossene) Multiplayer-Sessions inklusive Spieler-Counts.
+export interface MpSessionWithCount extends MpSession {
+  player_count: number;
+}
+export async function cloudListActiveSessions(): Promise<MpSessionWithCount[]> {
+  if (!isMultiplayerAvailable()) return [];
+  const supa = getClient();
+  const { data: sessions, error } = await supa
+    .from('sessions')
+    .select('*')
+    .is('closed_at', null)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.warn('cloudListActiveSessions:', error.message);
+    return [];
+  }
+  const out: MpSessionWithCount[] = [];
+  for (const s of (sessions as MpSession[]) ?? []) {
+    const { count } = await supa
+      .from('session_players')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', s.id);
+    out.push({ ...s, player_count: count ?? 0 });
+  }
+  return out;
+}
+
+export async function cloudCloseSession(sessionId: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa
+    .from('sessions')
+    .update({ closed_at: new Date().toISOString() })
+    .eq('id', sessionId);
+  if (error) { console.warn('cloudCloseSession:', error.message); return false; }
+  return true;
+}
+
+export async function cloudKickPlayer(playerId: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa.from('session_players').delete().eq('id', playerId);
+  if (error) { console.warn('cloudKickPlayer:', error.message); return false; }
+  return true;
+}
+
+export async function cloudListPlayersForSession(sessionId: string): Promise<MpPlayer[]> {
+  if (!isMultiplayerAvailable()) return [];
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('session_players')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('joined_at', { ascending: true });
+  if (error) { console.warn('cloudListPlayersForSession:', error.message); return []; }
+  return (data as MpPlayer[]) ?? [];
+}
+
 export async function cloudDeleteAccount(usernameLower: string): Promise<boolean> {
   if (!isMultiplayerAvailable()) return false;
   const supa = getClient();
   const { error } = await supa.from('accounts').delete().eq('username_lower', usernameLower);
   if (error) { console.warn('cloudDeleteAccount:', error.message); return false; }
   return true;
+}
+
+// 👁 Realtime-Subscription für Admin-Panel: triggert callback bei jeder
+// Änderung an accounts oder sessions. Joyce sieht neue Registrierungen live.
+export function subscribeToAdminEvents(handlers: {
+  onAccountChange?: () => void;
+  onSessionChange?: () => void;
+}): () => void {
+  if (!isMultiplayerAvailable()) return () => {};
+  const supa = getClient();
+  const ch = supa
+    .channel('valdermoor-admin', { config: { broadcast: { self: false } } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, () => {
+      handlers.onAccountChange?.();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
+      handlers.onSessionChange?.();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'session_players' }, () => {
+      handlers.onSessionChange?.();
+    })
+    .subscribe();
+  return () => { void supa.removeChannel(ch); };
 }
 
 // 💀 Globaler Broadcast-Channel für creepy Server-Events
@@ -191,6 +315,130 @@ export async function cloudWipeAllSessions(): Promise<boolean> {
   // CASCADE löscht players + inventory + messages
   const { error } = await supa.from('sessions').delete().not('id', 'is', null);
   if (error) { console.warn('cloudWipeAllSessions:', error.message); return false; }
+  return true;
+}
+
+// Username umbenennen — kopiert den Account auf den neuen username_lower und löscht den alten.
+// Idempotent: macht nichts, wenn der Ziel-Username schon existiert (= bereits migriert).
+export async function cloudRenameAccount(
+  oldLower: string,
+  newLower: string,
+  newUsername: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!isMultiplayerAvailable()) return { ok: false, reason: 'no-cloud' };
+  const supa = getClient();
+  const { data: existing } = await supa
+    .from('accounts')
+    .select('username_lower')
+    .eq('username_lower', newLower)
+    .maybeSingle();
+  if (existing) return { ok: false, reason: 'target-exists' };
+
+  const { data: old, error: getErr } = await supa
+    .from('accounts')
+    .select('*')
+    .eq('username_lower', oldLower)
+    .maybeSingle();
+  if (getErr || !old) return { ok: false, reason: 'old-missing' };
+
+  const oldRow = old as CloudAccount;
+  const { error: insErr } = await supa.from('accounts').insert({
+    username_lower: newLower,
+    username: newUsername,
+    email: oldRow.email,
+    password_hash: oldRow.password_hash,
+    password_salt: oldRow.password_salt,
+    password_algo: oldRow.password_algo,
+    banned_until: oldRow.banned_until ?? null,
+    banned_reason: oldRow.banned_reason ?? null,
+  });
+  if (insErr) return { ok: false, reason: 'insert-failed: ' + insErr.message };
+
+  const { error: delErr } = await supa.from('accounts').delete().eq('username_lower', oldLower);
+  if (delErr) {
+    console.warn('cloudRenameAccount: alten Eintrag konnte nicht gelöscht werden:', delErr.message);
+  }
+  return { ok: true };
+}
+
+// ─── Long-Term-Memory (Story-Beats) ──────────────────────────
+// Hält pro Spielszenario kurze Erinnerungen die der DM mit [ERINNERN:]
+// markiert. Werden beim Resume als Kontext-Block in den System-Prompt
+// geprependet, damit die KI vorherige Sessions nicht vergisst.
+
+export interface StoryBeat {
+  id: number;
+  scope_key: string;
+  content: string;
+  created_at: string;
+}
+
+// Wenn die story_beats-Tabelle (noch) nicht existiert: einmal warnen, dann
+// den Feature-Aufruf still überspringen — App soll nicht crashen.
+let storyBeatsAvailable: boolean | null = null;
+
+function setStoryBeatsUnavailable(reason: string) {
+  if (storyBeatsAvailable === false) return;
+  storyBeatsAvailable = false;
+  console.warn(`[LTM] Story-Beats deaktiviert: ${reason}. Lass das aktuelle schema.sql in Supabase laufen, um Long-Term-Memory zu aktivieren.`);
+}
+
+export async function cloudInsertStoryBeat(scopeKey: string, content: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  if (storyBeatsAvailable === false) return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  const supa = getClient();
+  const { error } = await supa.from('story_beats').insert({
+    scope_key: scopeKey,
+    content: trimmed.slice(0, 500),
+  });
+  if (error) {
+    if (error.code === 'PGRST205' || /not find the table/i.test(error.message)) {
+      setStoryBeatsUnavailable('Tabelle fehlt');
+    } else {
+      console.warn('cloudInsertStoryBeat:', error.message);
+    }
+    return false;
+  }
+  storyBeatsAvailable = true;
+  return true;
+}
+
+export async function cloudListStoryBeats(scopeKey: string, limit: number = 20): Promise<StoryBeat[]> {
+  if (!isMultiplayerAvailable()) return [];
+  if (storyBeatsAvailable === false) return [];
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('story_beats')
+    .select('*')
+    .eq('scope_key', scopeKey)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (error.code === 'PGRST205' || /not find the table/i.test(error.message)) {
+      setStoryBeatsUnavailable('Tabelle fehlt');
+    } else {
+      console.warn('cloudListStoryBeats:', error.message);
+    }
+    return [];
+  }
+  storyBeatsAvailable = true;
+  return ((data as StoryBeat[]) ?? []).reverse(); // älteste zuerst (chronologisch)
+}
+
+// Lösche alle Beats für einen Scope (z.B. bei "Neue Runde" oder Slot-Reset).
+export async function cloudClearStoryBeats(scopeKey: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  if (storyBeatsAvailable === false) return false;
+  const supa = getClient();
+  const { error } = await supa.from('story_beats').delete().eq('scope_key', scopeKey);
+  if (error) {
+    if (!(error.code === 'PGRST205' || /not find the table/i.test(error.message))) {
+      console.warn('cloudClearStoryBeats:', error.message);
+    }
+    return false;
+  }
   return true;
 }
 

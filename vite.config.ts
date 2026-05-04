@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -68,6 +68,27 @@ function tryLmsServerStart(): boolean {
   }
 }
 
+// Build-Plugin: ersetzt den __SW_VERSION__-Platzhalter im Service Worker
+// mit der aktuellen Paketversion + Build-Zeit. So bumpt jeder Build den
+// SW-Cache automatisch — kein "alter Code im Browser"-Problem mehr.
+function swVersionPlugin(): Plugin {
+  return {
+    name: 'sw-version',
+    apply: 'build',
+    closeBundle() {
+      const swPath = join('dist', 'sw.js');
+      if (!existsSync(swPath)) return;
+      const stamp = `${pkg.version}-${Date.now().toString(36)}`;
+      const contents = readFileSync(swPath, 'utf8').replace(
+        /__SW_VERSION__/g,
+        stamp,
+      );
+      writeFileSync(swPath, contents, 'utf8');
+      console.log(`  ✓ sw.js Cache-Version: ${stamp}`);
+    },
+  };
+}
+
 function lmAutoStartPlugin(): Plugin {
   return {
     name: 'lm-autostart',
@@ -120,7 +141,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
-  plugins: [lmAutoStartPlugin()],
+  plugins: [lmAutoStartPlugin(), swVersionPlugin()],
   server: {
     proxy: {
       '/v1': {
