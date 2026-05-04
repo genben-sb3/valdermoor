@@ -49,6 +49,7 @@
           <button type="button" class="god-tab active" data-tab="accounts">👤 Accounts</button>
           <button type="button" class="god-tab" data-tab="sessions">🎲 Aktive Runden</button>
           <button type="button" class="god-tab" data-tab="actions">💀 Aktionen</button>
+          <button type="button" class="god-tab" data-tab="debug">🔧 Debug</button>
         </div>
         <div class="god-tab-content">
           <div id="god-accounts-pane" class="god-pane active">
@@ -74,6 +75,17 @@
               <button type="button" id="god-shutdown" class="god-btn-shutdown">
                 💀 SERVER-SHUTDOWN<br/><small>Alle nicht-geschützten Daten löschen</small>
               </button>
+            </div>
+          </div>
+          <div id="god-debug-pane" class="god-pane">
+            <div class="debug-toolbar">
+              <button type="button" id="debug-rerun" class="god-btn-small">🔄 Tests erneut</button>
+              <button type="button" id="debug-copy" class="god-btn-small">📋 Diagnose kopieren</button>
+              <button type="button" id="debug-sw-unregister" class="god-btn-small god-btn-danger">⚠ Service Worker killen + Reload</button>
+              <button type="button" id="debug-clear-local" class="god-btn-small god-btn-danger">⚠ Lokale Daten löschen</button>
+            </div>
+            <div id="debug-output">
+              <p class="god-empty">⏳ Lade Diagnose…</p>
             </div>
           </div>
         </div>

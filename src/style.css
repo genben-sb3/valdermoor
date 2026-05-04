@@ -1946,6 +1946,43 @@ body::before {
   cursor: pointer;
 }
 
+/* ========== Debug-Tab im God-Panel ========== */
+.debug-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a1f32;
+}
+.debug-section {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: #14101a;
+  border: 1px solid #2a1f32;
+  border-radius: 6px;
+}
+.debug-section h3 {
+  margin: 0 0 8px;
+  color: #d9a8ff;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+.debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.debug-table td {
+  padding: 3px 6px;
+  vertical-align: top;
+  border-bottom: 1px solid #1a1410;
+}
+.debug-table td:first-child { width: 18px; text-align: center; }
+.debug-label { color: var(--text-dim); white-space: nowrap; padding-right: 12px; }
+.debug-value { color: var(--text); word-break: break-word; }
+
 /* Live-Event-Toast (neuer User registriert etc.) */
 .god-toast {
   position: fixed;

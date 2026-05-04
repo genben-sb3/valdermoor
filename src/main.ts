@@ -32,6 +32,9 @@ import {
   cloudKickPlayer,
   cloudListPlayersForSession,
   subscribeToAdminEvents,
+  getSupabaseUrl,
+  getSupabaseKeyHint,
+  probeTable,
   type MpSessionWithCount,
   subscribeToGlobalEvents,
   broadcastShutdown,
@@ -1829,15 +1832,21 @@ function setupGodMode() {
   // Tab-Buttons
   document.querySelectorAll<HTMLButtonElement>('.god-tab').forEach((tab) => {
     tab.addEventListener('click', () => {
-      const t = tab.dataset.tab as 'accounts' | 'sessions' | 'actions';
+      const t = tab.dataset.tab as 'accounts' | 'sessions' | 'actions' | 'debug';
       document.querySelectorAll<HTMLButtonElement>('.god-tab').forEach((b) => {
         b.classList.toggle('active', b.dataset.tab === t);
       });
       document.querySelectorAll<HTMLDivElement>('.god-pane').forEach((p) => {
         p.classList.toggle('active', p.id === `god-${t}-pane`);
       });
+      // Debug-Tab beim ersten Öffnen automatisch füllen
+      if (t === 'debug' && lastDiagReport.length === 0) {
+        void runDiagnostics();
+      }
     });
   });
+
+  setupDebugTab();
 
   // Live-Suche
   search?.addEventListener('input', () => {
@@ -2198,6 +2207,269 @@ function renderProtectList() {
     });
     el.appendChild(lbl);
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// 🔧 Debug-Tab: Universal-Diagnose-Tool
+// Sammelt System-Info, SW-Status, Supabase-Health, Schema-Check,
+// LocalStorage-Zustand, API-Pings. "Diagnose kopieren" → Clipboard
+// damit der User mir bei Problemen einfach den Bericht schicken kann.
+// ────────────────────────────────────────────────────────────
+
+interface DiagSection {
+  title: string;
+  items: Array<{ label: string; value: string; ok?: boolean | null }>;
+}
+
+let lastDiagReport: DiagSection[] = [];
+
+async function checkUrl(url: string, opts: { timeoutMs?: number } = {}): Promise<{ ok: boolean; status: number; ms: number; err?: string }> {
+  const start = performance.now();
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 5000);
+    const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
+    clearTimeout(timer);
+    return { ok: res.ok, status: res.status, ms: Math.round(performance.now() - start) };
+  } catch (e) {
+    return { ok: false, status: 0, ms: Math.round(performance.now() - start), err: (e as Error).message };
+  }
+}
+
+async function buildDiagnostics(): Promise<DiagSection[]> {
+  const sections: DiagSection[] = [];
+
+  // System-Info
+  const sysInfo: DiagSection = { title: '🖥 System', items: [] };
+  sysInfo.items.push({ label: 'App-Version', value: APP_VERSION });
+  sysInfo.items.push({ label: 'URL', value: location.href.slice(0, 80) });
+  sysInfo.items.push({ label: 'User-Agent', value: navigator.userAgent.slice(0, 100) });
+  sysInfo.items.push({ label: 'Online', value: navigator.onLine ? 'ja' : 'nein', ok: navigator.onLine });
+  sysInfo.items.push({ label: 'Sprache', value: navigator.language });
+  sysInfo.items.push({ label: 'Bildschirm', value: `${window.screen.width}×${window.screen.height} (devicePixelRatio ${window.devicePixelRatio})` });
+  sysInfo.items.push({ label: 'Eingeloggt als', value: currentUser ?? '—' });
+  sysInfo.items.push({ label: 'Gott-Berechtigung', value: isGodUser() ? 'JA' : 'NEIN', ok: isGodUser() });
+  sysInfo.items.push({ label: 'Aktiver Save-Slot', value: String(activeSaveSlot) });
+  sections.push(sysInfo);
+
+  // Service Worker
+  const swInfo: DiagSection = { title: '⚙ Service Worker', items: [] };
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) {
+        swInfo.items.push({ label: 'Registrierung', value: 'keine', ok: false });
+      } else {
+        swInfo.items.push({ label: 'Scope', value: reg.scope });
+        swInfo.items.push({ label: 'Active', value: reg.active?.state ?? '—', ok: reg.active?.state === 'activated' });
+        swInfo.items.push({ label: 'Installing', value: reg.installing?.state ?? '—' });
+        swInfo.items.push({ label: 'Waiting', value: reg.waiting?.state ?? '—' });
+        swInfo.items.push({ label: 'Controlling', value: navigator.serviceWorker.controller ? 'ja' : 'nein', ok: !!navigator.serviceWorker.controller });
+      }
+      const cacheNames = await caches.keys();
+      const valdermoorCaches = cacheNames.filter((c) => c.startsWith('valdermoor-'));
+      swInfo.items.push({ label: 'Cache-Keys', value: valdermoorCaches.join(', ') || '(leer)' });
+    } catch (e) {
+      swInfo.items.push({ label: 'Fehler', value: (e as Error).message, ok: false });
+    }
+  } else {
+    swInfo.items.push({ label: 'Service Worker', value: 'nicht verfügbar', ok: false });
+  }
+  sections.push(swInfo);
+
+  // Supabase + Schema
+  const supaInfo: DiagSection = { title: '☁ Supabase / Schema', items: [] };
+  const supaUrl = getSupabaseUrl();
+  supaInfo.items.push({ label: 'URL', value: supaUrl?.replace(/^https?:\/\//, '') ?? '(nicht konfiguriert)', ok: !!supaUrl });
+  supaInfo.items.push({ label: 'Key-Prefix', value: getSupabaseKeyHint() ?? '—' });
+  if (supaUrl) {
+    const ping = await checkUrl(supaUrl + '/rest/v1/', { timeoutMs: 4000 });
+    supaInfo.items.push({ label: 'REST-Ping', value: `HTTP ${ping.status} (${ping.ms}ms)${ping.err ? ' ' + ping.err : ''}`, ok: ping.status > 0 });
+
+    // Schema-Checks
+    const accountsP = await probeTable('accounts', ['username_lower', 'email', 'banned_until', 'last_login_at']);
+    if (!accountsP.ok) {
+      supaInfo.items.push({ label: 'Tabelle accounts', value: accountsP.error ?? 'Fehler', ok: false });
+    } else {
+      const missing = Object.entries(accountsP.hasColumns).filter(([, ok]) => !ok).map(([k]) => k);
+      supaInfo.items.push({
+        label: 'Tabelle accounts',
+        value: missing.length ? `OK aber fehlende Cols: ${missing.join(', ')}` : 'OK (alle Cols vorhanden)',
+        ok: missing.length === 0,
+      });
+    }
+    const sessionsP = await probeTable('sessions', ['id', 'code', 'closed_at']);
+    supaInfo.items.push({
+      label: 'Tabelle sessions',
+      value: sessionsP.ok ? 'OK' : (sessionsP.error ?? 'Fehler'),
+      ok: sessionsP.ok,
+    });
+    const beatsP = await probeTable('story_beats', ['id', 'scope_key', 'content']);
+    supaInfo.items.push({
+      label: 'Tabelle story_beats (LTM)',
+      value: beatsP.ok ? 'OK' : (beatsP.error === 'table-missing' ? 'fehlt — schema.sql laufen lassen' : (beatsP.error ?? 'Fehler')),
+      ok: beatsP.ok,
+    });
+  }
+  sections.push(supaInfo);
+
+  // LocalStorage
+  const storageInfo: DiagSection = { title: '💾 LocalStorage', items: [] };
+  try {
+    const accounts = loadAccounts();
+    const accountKeys = Object.keys(accounts);
+    storageInfo.items.push({ label: 'Lokale Accounts', value: `${accountKeys.length} (${accountKeys.join(', ')})` });
+    const session = localStorage.getItem(SESSION_KEY);
+    storageInfo.items.push({ label: 'Session', value: session ?? '—' });
+    const trustMap = loadTrustedDevices();
+    const trustEntries = Object.values(trustMap)
+      .filter((t) => t.expires > Date.now())
+      .map((t) => `${t.username} (bis ${new Date(t.expires).toLocaleDateString('de-DE')})`);
+    storageInfo.items.push({ label: 'Vertraute Geräte', value: trustEntries.join(', ') || '(keine)' });
+    // Save-Slots
+    const slotInfo: string[] = [];
+    for (let i = 1; i <= SAVE_SLOT_COUNT; i++) {
+      const s = loadGameFromSlot(i);
+      if (s) slotInfo.push(`Slot ${i}: ${s.players.length} Helden`);
+    }
+    storageInfo.items.push({ label: 'Save-Slots', value: slotInfo.join(', ') || '(alle leer)' });
+    // Login-Attempts
+    const attempts = loadLoginAttempts();
+    const lockedNow = Object.entries(attempts)
+      .filter(([, info]) => info.lockUntil > Date.now())
+      .map(([u]) => u);
+    storageInfo.items.push({
+      label: 'Aktuell gesperrte Logins',
+      value: lockedNow.join(', ') || '(keine)',
+      ok: lockedNow.length === 0,
+    });
+    // Total Storage Usage
+    let totalBytes = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k) totalBytes += k.length + (localStorage.getItem(k)?.length ?? 0);
+    }
+    storageInfo.items.push({ label: 'Belegung', value: `~${(totalBytes / 1024).toFixed(1)} KB` });
+  } catch (e) {
+    storageInfo.items.push({ label: 'Fehler', value: (e as Error).message, ok: false });
+  }
+  sections.push(storageInfo);
+
+  // External APIs
+  const apiInfo: DiagSection = { title: '🌐 Externe APIs', items: [] };
+  const [poll, groq, emailjs] = await Promise.all([
+    checkUrl('https://text.pollinations.ai/openai/v1/models', { timeoutMs: 5000 }),
+    checkUrl('https://api.groq.com/openai/v1/models', { timeoutMs: 5000 }),
+    checkUrl('https://api.emailjs.com/api/v1.0/email/send', { timeoutMs: 4000 }),
+  ]);
+  apiInfo.items.push({ label: 'Pollinations (DM-Fallback)', value: `HTTP ${poll.status} (${poll.ms}ms)`, ok: poll.status > 0 && poll.status < 500 });
+  apiInfo.items.push({ label: 'Groq (DM)', value: `HTTP ${groq.status} (${groq.ms}ms)`, ok: groq.status > 0 && groq.status < 500 });
+  apiInfo.items.push({ label: 'EmailJS (2FA)', value: `HTTP ${emailjs.status} (${emailjs.ms}ms) — 405/400 ist OK bei GET`, ok: emailjs.status > 0 });
+  apiInfo.items.push({ label: 'Pollinations Image-API', value: 'nicht gepingt (würde Quote verbrauchen)' });
+  sections.push(apiInfo);
+
+  // DM-Status (LM Studio / Cloud Backend)
+  const dmInfo: DiagSection = { title: '🎲 DM-Backend', items: [] };
+  dmInfo.items.push({ label: 'Aktueller Provider', value: lmProvider });
+  dmInfo.items.push({ label: 'Cloud-Backend', value: getCloudBackend() });
+  dmInfo.items.push({ label: 'Cloud-Modell', value: getCloudModel() });
+  dmInfo.items.push({ label: 'Bekanntes Modell-ID', value: knownModelId ?? '—' });
+  dmInfo.items.push({ label: 'Generiert gerade', value: isGenerating ? 'ja' : 'nein' });
+  sections.push(dmInfo);
+
+  return sections;
+}
+
+function renderDiagnostics(sections: DiagSection[]) {
+  const out = document.getElementById('debug-output') as HTMLDivElement | null;
+  if (!out) return;
+  if (sections.length === 0) {
+    out.innerHTML = '<p class="god-empty">Keine Daten.</p>';
+    return;
+  }
+  out.innerHTML = '';
+  for (const sec of sections) {
+    const block = document.createElement('div');
+    block.className = 'debug-section';
+    let html = `<h3>${escapeHtml(sec.title)}</h3><table class="debug-table">`;
+    for (const item of sec.items) {
+      const icon = item.ok === true ? '✅' : item.ok === false ? '❌' : '·';
+      html += `<tr><td>${icon}</td><td class="debug-label">${escapeHtml(item.label)}</td><td class="debug-value">${escapeHtml(item.value)}</td></tr>`;
+    }
+    html += '</table>';
+    block.innerHTML = html;
+    out.appendChild(block);
+  }
+}
+
+function diagnosticsToText(sections: DiagSection[]): string {
+  const lines: string[] = [];
+  lines.push(`Valdermoor Diagnose · ${new Date().toISOString()}`);
+  lines.push('═'.repeat(60));
+  for (const sec of sections) {
+    lines.push('');
+    lines.push(sec.title);
+    lines.push('─'.repeat(40));
+    for (const item of sec.items) {
+      const icon = item.ok === true ? '✅' : item.ok === false ? '❌' : '·';
+      lines.push(`${icon} ${item.label.padEnd(28)} ${item.value}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+async function runDiagnostics() {
+  const out = document.getElementById('debug-output') as HTMLDivElement | null;
+  if (out) out.innerHTML = '<p class="god-empty">⏳ Tests laufen…</p>';
+  lastDiagReport = await buildDiagnostics();
+  renderDiagnostics(lastDiagReport);
+}
+
+function setupDebugTab() {
+  const rerun = document.getElementById('debug-rerun') as HTMLButtonElement | null;
+  const copy = document.getElementById('debug-copy') as HTMLButtonElement | null;
+  const swKill = document.getElementById('debug-sw-unregister') as HTMLButtonElement | null;
+  const clearLocal = document.getElementById('debug-clear-local') as HTMLButtonElement | null;
+
+  rerun?.addEventListener('click', () => { void runDiagnostics(); });
+
+  copy?.addEventListener('click', async () => {
+    if (lastDiagReport.length === 0) await runDiagnostics();
+    const text = diagnosticsToText(lastDiagReport);
+    try {
+      await navigator.clipboard.writeText(text);
+      showGodToast('📋 Diagnose kopiert (in Zwischenablage)');
+    } catch {
+      // Fallback: prompt mit Text zum manuellen Kopieren
+      prompt('Kopiere den folgenden Text manuell:', text);
+    }
+  });
+
+  swKill?.addEventListener('click', async () => {
+    if (!confirm('Service Worker komplett deregistrieren + alle Caches löschen + neu laden?\n\nDamit ist der "alter Code"-Bug zu 100% weg.')) return;
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) await r.unregister();
+      const keys = await caches.keys();
+      for (const k of keys) await caches.delete(k);
+      alert('✅ SW + Caches gelöscht. Lade jetzt neu.');
+      location.reload();
+    } catch (e) {
+      alert('Fehler: ' + (e as Error).message);
+    }
+  });
+
+  clearLocal?.addEventListener('click', () => {
+    if (!confirm('ALLE lokalen Daten dieser App löschen?\n\nDas umfasst:\n• Accounts\n• Spielstände\n• Trust-Devices\n• Login-Attempts\n• Einstellungen\n\nDanach musst du dich neu anmelden. Das kann nicht rückgängig gemacht werden.')) return;
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('valdermoor:')) keys.push(k);
+    }
+    for (const k of keys) localStorage.removeItem(k);
+    alert(`✅ ${keys.length} Einträge gelöscht. Seite wird neu geladen.`);
+    location.reload();
+  });
 }
 
 async function runShutdown() {

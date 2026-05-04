@@ -16,6 +16,42 @@ export function isMultiplayerAvailable(): boolean {
   return !!URL && !!KEY;
 }
 
+// Debug-Helpers: zeigen den (gekürzten) Endpunkt + Key-Prefix für Diagnose.
+export function getSupabaseUrl(): string | null {
+  return URL ?? null;
+}
+export function getSupabaseKeyHint(): string | null {
+  return KEY ? KEY.slice(0, 12) + '…' : null;
+}
+
+// Probiert eine Tabelle zu lesen. Gibt zurück: { ok, hasColumns, error? }
+export async function probeTable(
+  table: string,
+  columns: string[],
+): Promise<{ ok: boolean; hasColumns: Record<string, boolean>; error?: string }> {
+  if (!isMultiplayerAvailable()) return { ok: false, hasColumns: {}, error: 'no-supabase-config' };
+  const supa = getClient();
+  const { error } = await supa.from(table).select(columns.join(',')).limit(1);
+  if (error) {
+    if (error.code === 'PGRST205' || /not find the table/i.test(error.message)) {
+      return { ok: false, hasColumns: {}, error: 'table-missing' };
+    }
+    if (error.code === 'PGRST204' || /column/i.test(error.message)) {
+      // Eine spezifische Column fehlt — gehen wir einzeln durch.
+      const hasColumns: Record<string, boolean> = {};
+      for (const c of columns) {
+        const { error: e2 } = await supa.from(table).select(c).limit(1);
+        hasColumns[c] = !e2;
+      }
+      return { ok: true, hasColumns, error: undefined };
+    }
+    return { ok: false, hasColumns: {}, error: error.message };
+  }
+  const hasColumns: Record<string, boolean> = {};
+  for (const c of columns) hasColumns[c] = true;
+  return { ok: true, hasColumns };
+}
+
 function getClient(): SupabaseClient {
   if (!client) {
     if (!URL || !KEY) throw new Error('Supabase nicht konfiguriert');
