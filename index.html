@@ -39,11 +39,43 @@
       <div class="modal-box god-box">
         <div class="god-header">
           <h2>👁 JOYCE-GOTT-MODUS</h2>
-          <button type="button" id="god-close" class="text-btn">✕ Schließen</button>
+          <div class="god-header-actions">
+            <button type="button" id="god-refresh" class="text-btn" title="Daten neu laden">🔄</button>
+            <button type="button" id="god-close" class="text-btn">✕ Schließen</button>
+          </div>
         </div>
-        <p class="modal-sub">Du bist über allen. User listed, gebannt, befreit. Was tust du, Joyce?</p>
-        <div id="god-list" class="god-list">
-          <p class="god-empty">⏳ Lade User…</p>
+        <div id="god-stats" class="god-stats">⏳</div>
+        <div class="god-tabs">
+          <button type="button" class="god-tab active" data-tab="accounts">👤 Accounts</button>
+          <button type="button" class="god-tab" data-tab="sessions">🎲 Aktive Runden</button>
+          <button type="button" class="god-tab" data-tab="actions">💀 Aktionen</button>
+        </div>
+        <div class="god-tab-content">
+          <div id="god-accounts-pane" class="god-pane active">
+            <input type="search" id="god-search" placeholder="🔍 Account suchen (Name oder Email)…" />
+            <div id="god-list" class="god-list">
+              <p class="god-empty">⏳ Lade User…</p>
+            </div>
+          </div>
+          <div id="god-sessions-pane" class="god-pane">
+            <div id="god-sessions-list" class="god-list">
+              <p class="god-empty">⏳ Lade Runden…</p>
+            </div>
+          </div>
+          <div id="god-actions-pane" class="god-pane">
+            <div class="god-action-group">
+              <h3>🛡 Server-Schutz</h3>
+              <p class="modal-sub">User die du HIER markierst, werden beim Server-Shutdown verschont.</p>
+              <div id="god-protect-list"><p class="god-empty">Lade…</p></div>
+            </div>
+            <div class="god-action-group god-action-danger">
+              <h3>💀 Server-Shutdown</h3>
+              <p class="modal-sub">Löscht ALLE Spielrunden + nicht-geschützte Accounts. Mit creepy Glitch-Animation für alle eingeloggten User. Du kannst dich per Override-Pwd befreien.</p>
+              <button type="button" id="god-shutdown" class="god-btn-shutdown">
+                💀 SERVER-SHUTDOWN<br/><small>Alle nicht-geschützten Daten löschen</small>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

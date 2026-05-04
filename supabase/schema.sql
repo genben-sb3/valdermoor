@@ -26,6 +26,8 @@ create index if not exists idx_accounts_email on public.accounts(email);
 -- Joyce-Gott-Modus: Bann + Timeout
 alter table public.accounts add column if not exists banned_until timestamptz;
 alter table public.accounts add column if not exists banned_reason text;
+-- Letzter Login (für "online jetzt"-Anzeige im Admin-Panel)
+alter table public.accounts add column if not exists last_login_at timestamptz;
 
 -- ─── Username-Migration "ben" → "admin" ─────────────────────────────
 -- Läuft normalerweise automatisch beim App-Start (siehe migrateBenToAdmin).

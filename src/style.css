@@ -1766,6 +1766,186 @@ body::before {
 .god-btn-small.god-btn-undo { border-color: #4a8a6a; color: #7bc080; }
 .god-empty { color: var(--text-dim); font-style: italic; text-align: center; padding: 24px; }
 
+/* ========== God-Panel: Tabs + Stats + Sessions (v2) ========== */
+.god-box { width: min(820px, 95vw); }
+.god-header-actions { display: flex; gap: 8px; align-items: center; }
+
+.god-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 12px;
+  padding: 8px 10px;
+  background: #14101a;
+  border: 1px solid #2a1f32;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.stat-pill {
+  padding: 3px 8px;
+  background: #1f1428;
+  border: 1px solid #3a1c44;
+  border-radius: 10px;
+  color: #d9a8ff;
+}
+.stat-pill.stat-online { color: #7bc080; border-color: #2a4a32; background: #1a2218; }
+
+.god-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #2a1f32;
+}
+.god-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  color: var(--text-dim);
+  padding: 8px 14px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+}
+.god-tab:hover { color: #d9a8ff; }
+.god-tab.active {
+  color: #d9a8ff;
+  background: #1a1410;
+  border-color: #2a1f32;
+  border-bottom: 1px solid #1a1410;
+  margin-bottom: -1px;
+}
+
+.god-pane { display: none; padding-top: 10px; }
+.god-pane.active { display: block; }
+
+#god-search {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: #14101a;
+  border: 1px solid #2a1f32;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-body);
+}
+#god-search:focus {
+  outline: none;
+  border-color: #a053d9;
+}
+
+/* Account-Row v2 */
+.god-user {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
+}
+.god-user.god-online {
+  border-left-color: #7bc080;
+}
+.god-user-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.god-user-icon { font-size: 14px; padding-top: 2px; }
+.god-user-text { flex: 1; min-width: 0; }
+.god-user-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.god-user-bantext {
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: #2a1010;
+  border: 1px solid #6b2424;
+  border-radius: 3px;
+  color: #ff9a9a;
+  font-size: 11px;
+}
+.god-self-note {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Session-Row */
+.god-session {
+  background: #14101a;
+  border: 1px solid #2a1f32;
+  border-left: 4px solid #4a8aa0;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+.god-session-info { flex: 1; min-width: 0; }
+.god-session-code {
+  font-family: var(--font-heading);
+  color: #9cc3ff;
+  font-size: 16px;
+  letter-spacing: 0.1em;
+}
+.god-session-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.god-session-theme {
+  font-size: 12px;
+  color: var(--gold);
+  margin-top: 4px;
+  font-style: italic;
+}
+.god-session-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Aktionen-Tab */
+.god-action-group {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background: #14101a;
+  border: 1px solid #2a1f32;
+  border-radius: 6px;
+}
+.god-action-group h3 {
+  margin: 0 0 6px;
+  color: #d9a8ff;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+.god-action-danger { border-color: #6b2424; }
+.god-action-danger h3 { color: #ff9a9a; }
+
+.god-protect-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.god-protect-row small {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-left: 6px;
+}
+.god-protect-row input[type="checkbox"] {
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
 /* ========== Honey-Trap (😈 fake security theater) ========== */
 #honeytrap {
   position: fixed;

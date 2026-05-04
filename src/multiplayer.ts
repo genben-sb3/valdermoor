@@ -81,6 +81,7 @@ export interface CloudAccount {
   created_at: string;
   banned_until?: string | null;
   banned_reason?: string | null;
+  last_login_at?: string | null;
 }
 
 export async function cloudGetAccount(usernameLower: string): Promise<CloudAccount | null> {
@@ -148,6 +149,106 @@ export async function cloudBanUser(usernameLower: string, until: Date | null, re
     return false;
   }
   return true;
+}
+
+// Update last_login_at — Best-Effort. Fail-soft wenn Column fehlt.
+let lastLoginColumnAvailable: boolean | null = null;
+export async function cloudTouchLastLogin(usernameLower: string): Promise<void> {
+  if (!isMultiplayerAvailable()) return;
+  if (lastLoginColumnAvailable === false) return;
+  const supa = getClient();
+  const { error } = await supa
+    .from('accounts')
+    .update({ last_login_at: new Date().toISOString() })
+    .eq('username_lower', usernameLower);
+  if (error) {
+    if (error.code === 'PGRST204' || /last_login_at/i.test(error.message)) {
+      if (lastLoginColumnAvailable === null) {
+        console.warn('[Admin] last_login_at-Column fehlt — schema.sql in Supabase laufen lassen.');
+      }
+      lastLoginColumnAvailable = false;
+    }
+    return;
+  }
+  lastLoginColumnAvailable = true;
+}
+
+// Passwort eines fremden Accounts überschreiben (Joyce-Gott-Power).
+export async function cloudResetAccountPassword(
+  usernameLower: string,
+  passwordHash: string,
+  passwordSalt: string,
+  passwordAlgo: string,
+): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa
+    .from('accounts')
+    .update({ password_hash: passwordHash, password_salt: passwordSalt, password_algo: passwordAlgo })
+    .eq('username_lower', usernameLower);
+  if (error) {
+    console.warn('cloudResetAccountPassword:', error.message);
+    return false;
+  }
+  return true;
+}
+
+// Aktive (nicht geschlossene) Multiplayer-Sessions inklusive Spieler-Counts.
+export interface MpSessionWithCount extends MpSession {
+  player_count: number;
+}
+export async function cloudListActiveSessions(): Promise<MpSessionWithCount[]> {
+  if (!isMultiplayerAvailable()) return [];
+  const supa = getClient();
+  const { data: sessions, error } = await supa
+    .from('sessions')
+    .select('*')
+    .is('closed_at', null)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.warn('cloudListActiveSessions:', error.message);
+    return [];
+  }
+  const out: MpSessionWithCount[] = [];
+  for (const s of (sessions as MpSession[]) ?? []) {
+    const { count } = await supa
+      .from('session_players')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', s.id);
+    out.push({ ...s, player_count: count ?? 0 });
+  }
+  return out;
+}
+
+export async function cloudCloseSession(sessionId: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa
+    .from('sessions')
+    .update({ closed_at: new Date().toISOString() })
+    .eq('id', sessionId);
+  if (error) { console.warn('cloudCloseSession:', error.message); return false; }
+  return true;
+}
+
+export async function cloudKickPlayer(playerId: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  const supa = getClient();
+  const { error } = await supa.from('session_players').delete().eq('id', playerId);
+  if (error) { console.warn('cloudKickPlayer:', error.message); return false; }
+  return true;
+}
+
+export async function cloudListPlayersForSession(sessionId: string): Promise<MpPlayer[]> {
+  if (!isMultiplayerAvailable()) return [];
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('session_players')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('joined_at', { ascending: true });
+  if (error) { console.warn('cloudListPlayersForSession:', error.message); return []; }
+  return (data as MpPlayer[]) ?? [];
 }
 
 export async function cloudDeleteAccount(usernameLower: string): Promise<boolean> {

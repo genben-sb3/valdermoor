@@ -25,6 +25,13 @@ import {
   cloudInsertStoryBeat,
   cloudListStoryBeats,
   cloudClearStoryBeats,
+  cloudTouchLastLogin,
+  cloudResetAccountPassword,
+  cloudListActiveSessions,
+  cloudCloseSession,
+  cloudKickPlayer,
+  cloudListPlayersForSession,
+  type MpSessionWithCount,
   subscribeToGlobalEvents,
   broadcastShutdown,
   type MpSession,
@@ -1634,6 +1641,8 @@ function onLoggedIn() {
   hideLoginScreen();
   startInactivityLock();
   showGodButton();
+  // last_login_at in der Cloud aktualisieren — fail-soft.
+  if (currentUser) void cloudTouchLastLogin(currentUser.toLowerCase());
   const save = loadGame();
   if (save) {
     void resumeGame(save);
@@ -1772,24 +1781,70 @@ function hideGlitchOverlay() {
   }
 }
 
+// ────────────────────────────────────────────────────────────
+// 👁 Gott-Panel: Tabs (Accounts / Sessions / Aktionen) + Stats + Auto-Refresh
+// ────────────────────────────────────────────────────────────
+
+const godProtectedUsers = new Set<string>();
+// Welcher Tab ist aktiv — wird nur in DOM-Klassen gespiegelt; eigene Variable
+// momentan nicht benötigt, daher entfernt.
+let godSearchQuery = '';
+let godRefreshTimer: number | null = null;
+// Cache pro Render — wird von tab-spezifischen Renderern genutzt
+let cachedAccounts: CloudAccount[] = [];
+let cachedSessions: MpSessionWithCount[] = [];
+
 function setupGodMode() {
   const btn = document.getElementById('god-btn') as HTMLButtonElement | null;
   const modal = document.getElementById('god-modal') as HTMLDivElement | null;
   const close = document.getElementById('god-close') as HTMLButtonElement | null;
+  const refresh = document.getElementById('god-refresh') as HTMLButtonElement | null;
+  const search = document.getElementById('god-search') as HTMLInputElement | null;
   if (!btn || !modal || !close) return;
 
   btn.addEventListener('click', () => {
-    // Defense-in-depth: zweiter Check zur Laufzeit, falls jemand den Button
-    // per DevTools sichtbar macht.
     if (!isGodUser()) {
       modal.hidden = true;
       return;
     }
     modal.hidden = false;
-    void renderGodList();
+    void refreshAllGodData();
+    startGodAutoRefresh();
   });
-  close.addEventListener('click', () => { modal.hidden = true; });
-  modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+  close.addEventListener('click', () => {
+    modal.hidden = true;
+    stopGodAutoRefresh();
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.hidden = true;
+      stopGodAutoRefresh();
+    }
+  });
+  refresh?.addEventListener('click', () => { void refreshAllGodData(); });
+
+  // Tab-Buttons
+  document.querySelectorAll<HTMLButtonElement>('.god-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const t = tab.dataset.tab as 'accounts' | 'sessions' | 'actions';
+      document.querySelectorAll<HTMLButtonElement>('.god-tab').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tab === t);
+      });
+      document.querySelectorAll<HTMLDivElement>('.god-pane').forEach((p) => {
+        p.classList.toggle('active', p.id === `god-${t}-pane`);
+      });
+    });
+  });
+
+  // Live-Suche
+  search?.addEventListener('input', () => {
+    godSearchQuery = search.value.trim().toLowerCase();
+    renderAccountsList();
+  });
+
+  // Shutdown im Aktions-Tab
+  const shutdown = document.getElementById('god-shutdown') as HTMLButtonElement | null;
+  shutdown?.addEventListener('click', () => void runShutdown());
 }
 
 function showGodButton() {
@@ -1800,25 +1855,33 @@ function showGodButton() {
 function closeGodModal() {
   const modal = document.getElementById('god-modal') as HTMLDivElement | null;
   if (modal) modal.hidden = true;
+  stopGodAutoRefresh();
 }
 
-const godProtectedUsers = new Set<string>();
+function startGodAutoRefresh() {
+  stopGodAutoRefresh();
+  // Alle 10 Sekunden Daten erneuern, solange das Modal offen ist
+  godRefreshTimer = window.setInterval(() => {
+    if (!isGodUser()) { stopGodAutoRefresh(); return; }
+    void refreshAllGodData();
+  }, 10_000);
+}
 
-async function renderGodList() {
-  const list = document.getElementById('god-list') as HTMLDivElement | null;
-  if (!list) return;
-  // Runtime-Guard: ohne Gott-Berechtigung passiert nichts.
-  if (!isGodUser()) {
-    list.innerHTML = '';
-    closeGodModal();
-    return;
+function stopGodAutoRefresh() {
+  if (godRefreshTimer) {
+    clearInterval(godRefreshTimer);
+    godRefreshTimer = null;
   }
-  list.innerHTML = '<p class="god-empty">⏳ Lade User…</p>';
-  // Cloud + lokale Accounts mergen — neu registrierte oder nur-offline Accounts
-  // tauchen sonst nicht auf, weil cloudListAccounts nur Supabase-Einträge sieht.
-  const cloudAccts = await cloudListAccounts();
+}
+
+async function refreshAllGodData() {
+  if (!isGodUser()) { closeGodModal(); return; }
+  const [cloudAccts, sessions] = await Promise.all([
+    cloudListAccounts(),
+    cloudListActiveSessions(),
+  ]);
+  // Lokale Accounts mit Cloud-Accounts mergen
   const localAccts = loadAccounts();
-  console.log('[GodPanel] cloud:', cloudAccts.length, 'lokal:', Object.keys(localAccts).length);
   const merged = new Map<string, CloudAccount>();
   for (const a of cloudAccts) merged.set(a.username_lower, a);
   for (const [key, la] of Object.entries(localAccts)) {
@@ -1833,103 +1896,276 @@ async function renderGodList() {
       created_at: new Date(la.created).toISOString(),
     });
   }
-  const accounts = Array.from(merged.values()).sort((a, b) =>
+  cachedAccounts = Array.from(merged.values()).sort((a, b) =>
     a.created_at < b.created_at ? 1 : -1,
   );
-  if (accounts.length === 0) {
-    list.innerHTML = `<p class="god-empty">Keine User gefunden.<br/>
-      <small>Cloud: ${cloudAccts.length} · Lokal: ${Object.keys(localAccts).length}</small><br/>
-      <small>Tipp: Wenn nur du da bist, gibt's auch nur dich. Andere User registrieren sich auf deren Geräten.</small></p>`;
+  cachedSessions = sessions;
+  renderGodStats();
+  renderAccountsList();
+  renderSessionsList();
+  renderProtectList();
+}
+
+// Aktive User der letzten 10 Min = "online jetzt"
+function isOnlineNow(a: CloudAccount): boolean {
+  if (!a.last_login_at) return false;
+  return Date.now() - new Date(a.last_login_at).getTime() < 10 * 60_000;
+}
+
+function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return 'noch nie';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 'gerade eben';
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return 'gerade eben';
+  if (min < 60) return `vor ${min} Min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `vor ${h} Std`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `vor ${d} Tag${d === 1 ? '' : 'en'}`;
+  return new Date(iso).toLocaleDateString('de-DE');
+}
+
+function renderGodStats() {
+  const el = document.getElementById('god-stats') as HTMLDivElement | null;
+  if (!el) return;
+  const total = cachedAccounts.length;
+  const online = cachedAccounts.filter(isOnlineNow).length;
+  const banned = cachedAccounts.filter(
+    (a) => a.banned_until && new Date(a.banned_until) > new Date(),
+  ).length;
+  const sessions = cachedSessions.length;
+  const players = cachedSessions.reduce((sum, s) => sum + s.player_count, 0);
+  el.innerHTML = `
+    <span class="stat-pill">👥 ${total} Account${total === 1 ? '' : 's'}</span>
+    <span class="stat-pill stat-online">🟢 ${online} online</span>
+    <span class="stat-pill">🔨 ${banned} gebannt</span>
+    <span class="stat-pill">🎲 ${sessions} Runde${sessions === 1 ? '' : 'n'} (${players} Held${players === 1 ? '' : 'en'})</span>
+  `;
+}
+
+function renderAccountsList() {
+  const list = document.getElementById('god-list') as HTMLDivElement | null;
+  if (!list) return;
+  const q = godSearchQuery;
+  const filtered = q
+    ? cachedAccounts.filter((a) =>
+        a.username.toLowerCase().includes(q) || a.email.toLowerCase().includes(q),
+      )
+    : cachedAccounts;
+  if (filtered.length === 0) {
+    list.innerHTML = q
+      ? `<p class="god-empty">Kein Treffer für "${escapeHtml(q)}".</p>`
+      : '<p class="god-empty">Keine User in der Cloud.<br/><small>Wenn jemand sich registriert, taucht er hier auf.</small></p>';
     return;
   }
   list.innerHTML = '';
-
-  // 💀 Server-Shutdown-Knopf
-  const shutdownBox = document.createElement('div');
-  shutdownBox.className = 'god-shutdown-box';
-  shutdownBox.innerHTML = `
-    <button type="button" id="god-shutdown" class="god-btn-shutdown">
-      💀 SERVER-SHUTDOWN<br/><small>ALLES resetten — außer dich + ausgewählte</small>
-    </button>
-  `;
-  list.appendChild(shutdownBox);
-  shutdownBox.querySelector('#god-shutdown')?.addEventListener('click', async () => {
-    if (!isGodUser()) return; // Runtime-Guard auch hier
-    const protectedList = ['admin', ...Array.from(godProtectedUsers)];
-    const toDelete = accounts.filter((a) => !protectedList.includes(a.username_lower));
-    const namesPreview = toDelete.map((a) => a.username).join(', ') || '(niemand)';
-    if (!confirm(`💀 SERVER-SHUTDOWN\n\nWird unwiderruflich GELÖSCHT:\n• Alle Spielrunden + Chat-Verläufe + Inventare\n• ${toDelete.length} User-Accounts: ${namesPreview}\n\nGeschützt: dein Account + ausgewählte (${protectedList.join(', ')})\n\nWirklich? Das kann nicht rückgängig gemacht werden.`)) return;
-    const finalConfirm = prompt('Tippe "SHUTDOWN" zum bestätigen:');
-    if (finalConfirm !== 'SHUTDOWN') return;
-    // Animation für ALLE (Ben inklusive) — Ben kann sich per Pwd befreien
-    void broadcastShutdown();
-    showGlitchOverlay({ allowOverride: true });
-    // Wipe läuft im Hintergrund, kein Blocking
-    void (async () => {
-      await cloudWipeAllSessions();
-      for (const a of toDelete) await cloudDeleteAccount(a.username_lower);
-      console.log('💀 Wipe complete');
-      godProtectedUsers.clear();
-    })();
-  });
-  for (const a of accounts) {
-    const isBanned = a.banned_until && new Date(a.banned_until) > new Date();
-    const isMe = a.username_lower === 'admin';
-    const div = document.createElement('div');
-    div.className = `god-user ${isBanned ? 'god-banned' : ''}`;
-    const statusText = isBanned
-      ? `🔨 Gesperrt bis ${new Date(a.banned_until!).toLocaleString('de-DE')}`
-      : `Erstellt ${new Date(a.created_at).toLocaleDateString('de-DE')}`;
-    const isProtected = godProtectedUsers.has(a.username_lower);
-    div.innerHTML = `
-      ${isMe ? '<span class="god-shield" title="Du bist immer geschützt">🛡</span>' : `<input type="checkbox" class="god-protect" data-user="${a.username_lower}" ${isProtected ? 'checked' : ''} title="Vor Server-Shutdown schützen" />`}
-      <div>
-        <div class="god-user-name">${escapeHtml(a.username)}${isMe ? ' 👑' : ''}</div>
-        <div class="god-user-email">${escapeHtml(a.email)}</div>
-      </div>
-      <span class="god-user-status ${isBanned ? 'god-status-banned' : ''}">${statusText}</span>
-      <div class="god-user-actions"></div>
-    `;
-    const checkbox = div.querySelector('.god-protect') as HTMLInputElement | null;
-    checkbox?.addEventListener('change', () => {
-      const u = checkbox.dataset.user!;
-      if (checkbox.checked) godProtectedUsers.add(u);
-      else godProtectedUsers.delete(u);
-    });
-    const actions = div.querySelector('.god-user-actions') as HTMLDivElement;
-    if (isMe) {
-      actions.innerHTML = '<span style="opacity:0.5;font-size:11px;">— du selbst —</span>';
-    } else if (isBanned) {
-      const undo = document.createElement('button');
-      undo.className = 'god-btn-small god-btn-undo';
-      undo.textContent = '🕊 Befreien';
-      undo.addEventListener('click', async () => {
-        await cloudBanUser(a.username_lower, null, '');
-        await renderGodList();
-      });
-      actions.appendChild(undo);
-    } else {
-      const opts: Array<{ label: string; ms: number | null }> = [
-        { label: '5min', ms: 5 * 60_000 },
-        { label: '30min', ms: 30 * 60_000 },
-        { label: '24h', ms: 24 * 60 * 60_000 },
-        { label: '🔨 Bannen', ms: 100 * 365 * 24 * 60 * 60_000 },
-      ];
-      for (const opt of opts) {
-        const b = document.createElement('button');
-        b.className = `god-btn-small ${opt.label.includes('Bannen') ? 'god-btn-danger' : ''}`;
-        b.textContent = opt.label;
-        b.addEventListener('click', async () => {
-          const reason = prompt(`Grund für ${opt.label}-Sperre auf ${a.username}?`) ?? '';
-          const until = opt.ms ? new Date(Date.now() + opt.ms) : null;
-          await cloudBanUser(a.username_lower, until, reason);
-          await renderGodList();
-        });
-        actions.appendChild(b);
-      }
-    }
-    list.appendChild(div);
+  for (const a of filtered) {
+    list.appendChild(buildAccountRow(a));
   }
+}
+
+function buildAccountRow(a: CloudAccount): HTMLDivElement {
+  const isBanned = !!(a.banned_until && new Date(a.banned_until) > new Date());
+  const isMe = a.username_lower === 'admin';
+  const online = isOnlineNow(a);
+  const div = document.createElement('div');
+  div.className = `god-user ${isBanned ? 'god-banned' : ''} ${online ? 'god-online' : ''}`;
+  const banText = isBanned
+    ? `🔨 Gesperrt bis ${new Date(a.banned_until!).toLocaleString('de-DE')}${a.banned_reason ? ` — ${escapeHtml(a.banned_reason)}` : ''}`
+    : '';
+  div.innerHTML = `
+    <div class="god-user-main">
+      <div class="god-user-icon">${online ? '🟢' : '⚫'}</div>
+      <div class="god-user-text">
+        <div class="god-user-name">${escapeHtml(a.username)}${isMe ? ' 👑 (du)' : ''}</div>
+        <div class="god-user-email">${escapeHtml(a.email)}</div>
+        <div class="god-user-meta">
+          Erstellt ${new Date(a.created_at).toLocaleDateString('de-DE')}
+          · Letzter Login ${relativeTime(a.last_login_at)}
+        </div>
+        ${banText ? `<div class="god-user-bantext">${banText}</div>` : ''}
+      </div>
+    </div>
+    <div class="god-user-actions"></div>
+  `;
+  const actions = div.querySelector('.god-user-actions') as HTMLDivElement;
+
+  if (isMe) {
+    actions.innerHTML = '<span class="god-self-note">🛡 du selbst</span>';
+    return div;
+  }
+
+  if (isBanned) {
+    const undo = document.createElement('button');
+    undo.className = 'god-btn-small god-btn-undo';
+    undo.textContent = '🕊 Befreien';
+    undo.addEventListener('click', async () => {
+      await cloudBanUser(a.username_lower, null, '');
+      await refreshAllGodData();
+    });
+    actions.appendChild(undo);
+  } else {
+    const banOpts: Array<{ label: string; ms: number | null }> = [
+      { label: '5min', ms: 5 * 60_000 },
+      { label: '30min', ms: 30 * 60_000 },
+      { label: '24h', ms: 24 * 60 * 60_000 },
+      { label: '🔨 Permanent', ms: 100 * 365 * 24 * 60 * 60_000 },
+    ];
+    for (const opt of banOpts) {
+      const b = document.createElement('button');
+      b.className = `god-btn-small ${opt.label.includes('Permanent') ? 'god-btn-danger' : ''}`;
+      b.textContent = opt.label;
+      b.addEventListener('click', async () => {
+        const reason = prompt(`Grund für ${opt.label}-Sperre auf ${a.username}?`) ?? '';
+        const until = opt.ms ? new Date(Date.now() + opt.ms) : null;
+        await cloudBanUser(a.username_lower, until, reason);
+        await refreshAllGodData();
+      });
+      actions.appendChild(b);
+    }
+  }
+
+  // Pwd-Reset (Joyce kann fremde Pwds überschreiben)
+  const pwdBtn = document.createElement('button');
+  pwdBtn.className = 'god-btn-small';
+  pwdBtn.textContent = '🔑 Pwd';
+  pwdBtn.title = 'Neues Passwort für diesen Account setzen';
+  pwdBtn.addEventListener('click', async () => {
+    const newPwd = prompt(`Neues Passwort für ${a.username} (min 8 Zeichen, 1 Buchstabe + 1 Ziffer):`);
+    if (!newPwd) return;
+    const err = checkPasswordStrength(newPwd);
+    if (err) { alert(err); return; }
+    if (!confirm(`Passwort für ${a.username} wirklich überschreiben?\n\nDer User wird ausgesperrt bis du ihm das neue Pwd verrätst.`)) return;
+    const salt = generateSalt();
+    const hash = await hashPasswordPBKDF2(newPwd, salt, PBKDF2_CURRENT_ITERATIONS);
+    const ok = await cloudResetAccountPassword(a.username_lower, hash, salt, PBKDF2_CURRENT_ALGO);
+    if (ok) {
+      alert(`✅ Pwd von ${a.username} überschrieben.\n\nNeues Pwd: ${newPwd}`);
+    } else {
+      alert(`❌ Konnte Pwd nicht überschreiben (Cloud-Fehler).`);
+    }
+    await refreshAllGodData();
+  });
+  actions.appendChild(pwdBtn);
+
+  // Account löschen (einzeln)
+  const delBtn = document.createElement('button');
+  delBtn.className = 'god-btn-small god-btn-danger';
+  delBtn.textContent = '🗑';
+  delBtn.title = 'Account permanent löschen';
+  delBtn.addEventListener('click', async () => {
+    if (!confirm(`Account "${a.username}" (${a.email}) wirklich permanent löschen?\n\nDas kann nicht rückgängig gemacht werden.`)) return;
+    await cloudDeleteAccount(a.username_lower);
+    await refreshAllGodData();
+  });
+  actions.appendChild(delBtn);
+
+  return div;
+}
+
+function renderSessionsList() {
+  const list = document.getElementById('god-sessions-list') as HTMLDivElement | null;
+  if (!list) return;
+  if (cachedSessions.length === 0) {
+    list.innerHTML = '<p class="god-empty">Keine aktiven Multiplayer-Runden.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const s of cachedSessions) {
+    const row = document.createElement('div');
+    row.className = 'god-session';
+    row.innerHTML = `
+      <div class="god-session-info">
+        <div class="god-session-code">🎲 ${escapeHtml(s.code)}</div>
+        <div class="god-session-meta">
+          Host: ${escapeHtml(s.host_user)}
+          · ${s.player_count} Held${s.player_count === 1 ? '' : 'en'}
+          · ${escapeHtml(s.age_mode)}
+          · gestartet ${relativeTime(s.created_at)}
+        </div>
+        ${s.adventure_prompt ? `<div class="god-session-theme">📖 ${escapeHtml(s.adventure_prompt)}</div>` : ''}
+      </div>
+      <div class="god-session-actions">
+        <button type="button" class="god-btn-small" data-action="players">👥 Spieler</button>
+        <button type="button" class="god-btn-small god-btn-danger" data-action="close">✕ Schließen</button>
+      </div>
+    `;
+    row.querySelector<HTMLButtonElement>('[data-action="close"]')?.addEventListener('click', async () => {
+      if (!confirm(`Runde ${s.code} wirklich beenden? Alle Spieler werden rausgeworfen.`)) return;
+      await cloudCloseSession(s.id);
+      await refreshAllGodData();
+    });
+    row.querySelector<HTMLButtonElement>('[data-action="players"]')?.addEventListener('click', async () => {
+      await showSessionPlayers(s);
+    });
+    list.appendChild(row);
+  }
+}
+
+async function showSessionPlayers(s: MpSessionWithCount) {
+  const players = await cloudListPlayersForSession(s.id);
+  if (players.length === 0) {
+    alert(`Runde ${s.code} hat aktuell keine Helden.`);
+    return;
+  }
+  const lines = players.map((p) =>
+    `• ${p.player_name} (${p.player_class}) — HP ${p.hp}/${p.max_hp} — User: ${p.user_name}`,
+  );
+  const choice = prompt(
+    `Helden in Runde ${s.code}:\n\n${lines.join('\n')}\n\nUm einen Helden zu kicken: tippe seinen Namen. Sonst leer lassen.`,
+  );
+  if (!choice) return;
+  const target = players.find((p) => p.player_name.toLowerCase() === choice.trim().toLowerCase());
+  if (!target) { alert('Kein Held mit diesem Namen.'); return; }
+  if (!confirm(`Held "${target.player_name}" aus Runde ${s.code} kicken?`)) return;
+  await cloudKickPlayer(target.id);
+  await refreshAllGodData();
+}
+
+function renderProtectList() {
+  const el = document.getElementById('god-protect-list') as HTMLDivElement | null;
+  if (!el) return;
+  const others = cachedAccounts.filter((a) => a.username_lower !== 'admin');
+  if (others.length === 0) {
+    el.innerHTML = '<p class="god-empty">Außer dir gibt\'s niemanden.</p>';
+    return;
+  }
+  el.innerHTML = '';
+  for (const a of others) {
+    const lbl = document.createElement('label');
+    lbl.className = 'god-protect-row';
+    const isProtected = godProtectedUsers.has(a.username_lower);
+    lbl.innerHTML = `
+      <input type="checkbox" data-user="${a.username_lower}" ${isProtected ? 'checked' : ''} />
+      <span>${escapeHtml(a.username)} <small>${escapeHtml(a.email)}</small></span>
+    `;
+    const cb = lbl.querySelector('input') as HTMLInputElement;
+    cb.addEventListener('change', () => {
+      if (cb.checked) godProtectedUsers.add(a.username_lower);
+      else godProtectedUsers.delete(a.username_lower);
+    });
+    el.appendChild(lbl);
+  }
+}
+
+async function runShutdown() {
+  if (!isGodUser()) return;
+  const protectedList = ['admin', ...Array.from(godProtectedUsers)];
+  const toDelete = cachedAccounts.filter((a) => !protectedList.includes(a.username_lower));
+  const namesPreview = toDelete.map((a) => a.username).join(', ') || '(niemand)';
+  if (!confirm(`💀 SERVER-SHUTDOWN\n\nWird unwiderruflich GELÖSCHT:\n• Alle Spielrunden + Chat-Verläufe + Inventare\n• ${toDelete.length} User-Accounts: ${namesPreview}\n\nGeschützt: ${protectedList.join(', ')}\n\nWirklich? Das kann nicht rückgängig gemacht werden.`)) return;
+  const finalConfirm = prompt('Tippe "SHUTDOWN" zum bestätigen:');
+  if (finalConfirm !== 'SHUTDOWN') return;
+  void broadcastShutdown();
+  showGlitchOverlay({ allowOverride: true });
+  void (async () => {
+    await cloudWipeAllSessions();
+    for (const a of toDelete) await cloudDeleteAccount(a.username_lower);
+    console.log('💀 Wipe complete');
+    godProtectedUsers.clear();
+    await refreshAllGodData();
+  })();
 }
 
 // ────────────────────────────────────────────────────────────
