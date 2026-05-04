@@ -237,6 +237,87 @@ export async function cloudRenameAccount(
   return { ok: true };
 }
 
+// ─── Long-Term-Memory (Story-Beats) ──────────────────────────
+// Hält pro Spielszenario kurze Erinnerungen die der DM mit [ERINNERN:]
+// markiert. Werden beim Resume als Kontext-Block in den System-Prompt
+// geprependet, damit die KI vorherige Sessions nicht vergisst.
+
+export interface StoryBeat {
+  id: number;
+  scope_key: string;
+  content: string;
+  created_at: string;
+}
+
+// Wenn die story_beats-Tabelle (noch) nicht existiert: einmal warnen, dann
+// den Feature-Aufruf still überspringen — App soll nicht crashen.
+let storyBeatsAvailable: boolean | null = null;
+
+function setStoryBeatsUnavailable(reason: string) {
+  if (storyBeatsAvailable === false) return;
+  storyBeatsAvailable = false;
+  console.warn(`[LTM] Story-Beats deaktiviert: ${reason}. Lass das aktuelle schema.sql in Supabase laufen, um Long-Term-Memory zu aktivieren.`);
+}
+
+export async function cloudInsertStoryBeat(scopeKey: string, content: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  if (storyBeatsAvailable === false) return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  const supa = getClient();
+  const { error } = await supa.from('story_beats').insert({
+    scope_key: scopeKey,
+    content: trimmed.slice(0, 500),
+  });
+  if (error) {
+    if (error.code === 'PGRST205' || /not find the table/i.test(error.message)) {
+      setStoryBeatsUnavailable('Tabelle fehlt');
+    } else {
+      console.warn('cloudInsertStoryBeat:', error.message);
+    }
+    return false;
+  }
+  storyBeatsAvailable = true;
+  return true;
+}
+
+export async function cloudListStoryBeats(scopeKey: string, limit: number = 20): Promise<StoryBeat[]> {
+  if (!isMultiplayerAvailable()) return [];
+  if (storyBeatsAvailable === false) return [];
+  const supa = getClient();
+  const { data, error } = await supa
+    .from('story_beats')
+    .select('*')
+    .eq('scope_key', scopeKey)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (error.code === 'PGRST205' || /not find the table/i.test(error.message)) {
+      setStoryBeatsUnavailable('Tabelle fehlt');
+    } else {
+      console.warn('cloudListStoryBeats:', error.message);
+    }
+    return [];
+  }
+  storyBeatsAvailable = true;
+  return ((data as StoryBeat[]) ?? []).reverse(); // älteste zuerst (chronologisch)
+}
+
+// Lösche alle Beats für einen Scope (z.B. bei "Neue Runde" oder Slot-Reset).
+export async function cloudClearStoryBeats(scopeKey: string): Promise<boolean> {
+  if (!isMultiplayerAvailable()) return false;
+  if (storyBeatsAvailable === false) return false;
+  const supa = getClient();
+  const { error } = await supa.from('story_beats').delete().eq('scope_key', scopeKey);
+  if (error) {
+    if (!(error.code === 'PGRST205' || /not find the table/i.test(error.message))) {
+      console.warn('cloudClearStoryBeats:', error.message);
+    }
+    return false;
+  }
+  return true;
+}
+
 export async function cloudFindAccountByEmail(email: string): Promise<CloudAccount | null> {
   if (!isMultiplayerAvailable()) return null;
   const supa = getClient();

@@ -76,6 +76,26 @@ create table if not exists public.session_inventory (
   primary key (session_id, item_name)
 );
 
+-- ─── Long-Term-Memory (Story-Beats) ────────────────────────
+-- Pro Spielszenario speichern wir kurze "Erinnerungen" die der DM mit
+-- [ERINNERN: ...]-Tags markiert. Beim Resume werden die letzten ~20 Beats
+-- als Kontext-Block in den System-Prompt geprependet — so vergisst die
+-- KI vorherige Sessions nicht mehr.
+--
+-- scope_key:
+--   solo:<usernameLower>:<slot>    z.B. solo:admin:1
+--   mp:<session_uuid>              z.B. mp:9f3e...-abcd
+create table if not exists public.story_beats (
+  id bigint generated always as identity primary key,
+  scope_key text not null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_story_beats_scope_time
+  on public.story_beats(scope_key, created_at desc);
+
+alter table public.story_beats enable row level security;
+
 -- ─── Chat-Verlauf ──────────────────────────────────────────
 create table if not exists public.session_messages (
   id bigint generated always as identity primary key,
@@ -105,7 +125,7 @@ begin
     select policyname, schemaname || '.' || tablename as full_table
     from pg_policies
     where schemaname = 'public'
-      and tablename in ('sessions', 'session_players', 'session_inventory', 'session_messages', 'accounts')
+      and tablename in ('sessions', 'session_players', 'session_inventory', 'session_messages', 'accounts', 'story_beats')
   loop
     execute format('drop policy if exists %I on %s', r.policyname, r.full_table);
   end loop;
@@ -121,6 +141,9 @@ create policy "anon_all_messages" on public.session_messages
   for all using (true) with check (true);
 
 create policy "anon_all_accounts" on public.accounts
+  for all using (true) with check (true);
+
+create policy "anon_all_story_beats" on public.story_beats
   for all using (true) with check (true);
 
 -- ════════════════════════════════════════════════════════════

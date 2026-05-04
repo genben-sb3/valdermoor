@@ -22,6 +22,9 @@ import {
   cloudDeleteAccount,
   cloudRenameAccount,
   cloudWipeAllSessions,
+  cloudInsertStoryBeat,
+  cloudListStoryBeats,
+  cloudClearStoryBeats,
   subscribeToGlobalEvents,
   broadcastShutdown,
   type MpSession,
@@ -863,7 +866,7 @@ function openSlotModal() {
       modal.hidden = true;
       const newSave = loadGame();
       if (newSave) {
-        resumeGame(newSave);
+        void resumeGame(newSave);
       } else {
         // Leerer Slot → neue Runde starten
         players = [];
@@ -1042,9 +1045,11 @@ function buildSystemPrompt(): string {
     it: 'Rispondi SEMPRE in italiano. Mai in tedesco, mai in inglese. Usa un italiano naturale e letterario.',
   }[dmLang];
 
+  const memoryBlock = buildStoryBeatsBlock();
+
   return `${langInstruction}
 
-Du bist ein erfahrener Dungeon Master in der Fantasy-Welt VALDERMOOR — düstere Wälder, alte Ruinen, lebende Mythen, vergessene Götter.
+Du bist ein erfahrener Dungeon Master in der Fantasy-Welt VALDERMOOR — düstere Wälder, alte Ruinen, lebende Mythen, vergessene Götter.${memoryBlock}
 
 ═══ DEIN STIL ═══
 • Erzähl in der GEGENWART und der 2. Person ("Du siehst…", nie "Ben sah…").
@@ -1076,6 +1081,7 @@ Setze passende Tags AM ENDE deiner Antwort (nicht mittendrin):
 [QUEST: <kurzer Auftrag>]     — neuer Auftrag fürs Quest-Log (max ein Satz, z.B. "Finde die alte Karte im Tempel")
 [QUEST-ERFOLG: <Stichwort>]   — Auftrag erledigt; Stichwort = ein paar Wörter aus dem ursprünglichen Quest-Text
 [ORT: <englischer Bild-Prompt>] — wenn Helden einen NEUEN Schauplatz betreten. NUR englische Stichworte für Bildgenerierung, KEIN Satz, z.B. "ancient stone temple in misty forest" oder "frozen mountain pass at dusk"
+[ERINNERN: <eine Zeile>]      — wenn etwas EHRENWERTES passiert das die KI auch in zukünftigen Sessions wissen soll: Boss besiegt, magisches Item gefunden, NPC mit Helden verbündet, Stadt befreit, etc. EIN kurzer prägnanter Satz, z.B. "Ben hat den Schwarzdrachen Vargor in der Mondkluft besiegt." Setze NICHT für Kleinkram (Tür geöffnet, Goblin getötet) — nur für Sachen die in Wochen noch wichtig wären.
 
 ABSOLUT VERBOTEN:
 • KEINE Meta-Tags wie "[KEINE Tags]", "[Keine Aktion]", "[—]", "[]" — wenn nichts passt: GAR NICHTS schreiben.
@@ -1630,7 +1636,7 @@ function onLoggedIn() {
   showGodButton();
   const save = loadGame();
   if (save) {
-    resumeGame(save);
+    void resumeGame(save);
   } else {
     showModeModal();
   }
@@ -2214,7 +2220,7 @@ function setupLobbyModal() {
 
   startBtn?.addEventListener('click', () => {
     hideLobbyModal();
-    beginAdventure();
+    void beginAdventure();
   });
 }
 
@@ -2474,7 +2480,7 @@ function setupModal() {
 
 async function onCharsReady() {
   if (gameMode === 'solo') {
-    beginAdventure();
+    void beginAdventure();
     return;
   }
 
@@ -2516,7 +2522,7 @@ async function onCharsReady() {
       console.error(err);
       alert(`Konnte Runde nicht erstellen: ${(err as Error).message}\n\nFallback: Solo-Modus.`);
       gameMode = 'solo';
-      beginAdventure();
+      void beginAdventure();
     }
     return;
   }
@@ -2526,7 +2532,7 @@ async function onCharsReady() {
     if (!mpSession) {
       alert('Keine Session geladen. Wechsle zu Solo.');
       gameMode = 'solo';
-      beginAdventure();
+      void beginAdventure();
       return;
     }
     try {
@@ -2570,7 +2576,7 @@ async function onCharsReady() {
       attachMultiplayerSubscription();
       hideCharModal();
       // Direkt ins Spiel — Host hat es schon gestartet
-      beginAdventureAsGuest(history);
+      void beginAdventureAsGuest(history);
     } catch (err) {
       console.error(err);
       alert(`Konnte nicht beitreten: ${(err as Error).message}`);
@@ -2668,6 +2674,7 @@ function handleRemoteMessage(msg: MpMessage) {
     parseHeal(msg.content);
     parseQuests(msg.content);
     parseLocation(msg.content);
+    parseStoryBeats(msg.content);
     messages.push({ role: 'assistant', content: msg.content });
   }
 }
@@ -2718,9 +2725,11 @@ function handleRemoteInventory(
   void it; void type; // unused
 }
 
-function beginAdventureAsGuest(history: MpMessage[]) {
+async function beginAdventureAsGuest(history: MpMessage[]) {
   activePlayerId = players[0].id;
   $<HTMLElement>('#app').hidden = false;
+  // Long-Term-Memory: Beats für Session-Scope laden bevor System-Prompt gebaut wird.
+  await loadStoryBeatsForCurrentScope();
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   renderMessagesArea(true);
   renderPlayersSidebar();
@@ -2750,10 +2759,13 @@ function beginAdventureAsGuest(history: MpMessage[]) {
   setStatus(`Multiplayer · Beigetreten: ${mpSession?.code ?? ''}`, 'ok');
 }
 
-function beginAdventure() {
+async function beginAdventure() {
   activePlayerId = players[0].id;
   hideCharModal();
   $<HTMLElement>('#app').hidden = false;
+
+  // Long-Term-Memory: Beats für diesen Scope laden bevor System-Prompt gebaut wird.
+  await loadStoryBeatsForCurrentScope();
 
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   inventory.length = 0;
@@ -2775,7 +2787,7 @@ function beginAdventure() {
   void checkLmStudioStatus().then(() => sendToLMStudio(intro, 'Erzähler'));
 }
 
-function resumeGame(save: GameSave) {
+async function resumeGame(save: GameSave) {
   showGodButton();
   ageMode = save.ageMode;
   adventurePrompt = save.adventurePrompt ?? '';
@@ -2788,6 +2800,10 @@ function resumeGame(save: GameSave) {
   currentLocationImage = '';
   if (currentLocation) updateLocationBanner(currentLocation);
   activePlayerId = save.activePlayerId || (players[0]?.id ?? '');
+
+  // Long-Term-Memory: Story-Beats für aktuellen Scope laden, BEVOR
+  // der System-Prompt gebaut wird (sonst fehlt der Memory-Block).
+  await loadStoryBeatsForCurrentScope();
 
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   for (const m of save.messages) {
@@ -3341,6 +3357,7 @@ async function sendToLMStudio(userText: string, speaker: string) {
     parseHeal(fullText);
     parseQuests(fullText);
     parseLocation(fullText);
+    parseStoryBeats(fullText);
     const diceRequests = parseDiceRequests(fullText);
     const events = extractDmEvents(fullText);
     dmBody.textContent = stripGameTags(fullText);
@@ -3680,6 +3697,53 @@ function renderQuests() {
   }
 }
 
+// ─── Long-Term-Memory: Story-Beats ───────────────────────────
+// Pro Szenario (Solo: user+slot, MP: session) speichern wir kurze
+// Erinnerungen die der DM mit [ERINNERN:] markiert. Beim Spielstart
+// werden die letzten ~20 Beats in den System-Prompt geprependet.
+
+let loadedStoryBeats: string[] = [];
+
+function currentScopeKey(): string | null {
+  if (gameMode !== 'solo' && mpSession) {
+    return `mp:${mpSession.id}`;
+  }
+  if (currentUser) {
+    return `solo:${currentUser.toLowerCase()}:${activeSaveSlot}`;
+  }
+  return null;
+}
+
+function parseStoryBeats(text: string) {
+  const re = /\[ERINNERN:\s*([^\]]+?)\s*\]/gi;
+  let m: RegExpExecArray | null;
+  const scope = currentScopeKey();
+  while ((m = re.exec(text)) !== null) {
+    const beat = m[1].trim();
+    if (!beat) continue;
+    // Lokal sofort sichtbar (verhindert Doppel-Inserts beim Resume)
+    loadedStoryBeats.push(beat);
+    if (loadedStoryBeats.length > 30) loadedStoryBeats.shift();
+    if (scope) void cloudInsertStoryBeat(scope, beat);
+  }
+}
+
+async function loadStoryBeatsForCurrentScope() {
+  loadedStoryBeats = [];
+  const scope = currentScopeKey();
+  if (!scope) return;
+  try {
+    const beats = await cloudListStoryBeats(scope, 20);
+    loadedStoryBeats = beats.map((b) => b.content);
+  } catch { /* */ }
+}
+
+function buildStoryBeatsBlock(): string {
+  if (loadedStoryBeats.length === 0) return '';
+  const list = loadedStoryBeats.map((b) => `• ${b}`).join('\n');
+  return `\n\nVORHER PASSIERT (frühere Erinnerungen — beziehe dich darauf wenn passend):\n${list}\n`;
+}
+
 // ─── Karten-Generator ────────────────────────────────────────
 // DM markiert neuen Ort mit [ORT: <englischer Beschreibungs-Prompt>].
 // Beim ersten Auftauchen wird via Pollinations ein Banner-Bild geholt.
@@ -3943,6 +4007,7 @@ function stripGameTags(text: string): string {
     .replace(/\[W(?:ÜRFEL|URFEL|UERFEL):\s*[^\]]+\]/gi, '')
     .replace(/\[QUEST(?:-ERFOLG)?:\s*[^\]]+\]/gi, '')
     .replace(/\[ORT:\s*[^\]]+\]/gi, '')
+    .replace(/\[ERINNERN:\s*[^\]]+\]/gi, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\s+([.,;:!?])/g, '$1')
     .trim();
@@ -4152,8 +4217,13 @@ function setupInputForm() {
 
   const newRunBtn = document.getElementById('new-run-btn') as HTMLButtonElement | null;
   newRunBtn?.addEventListener('click', () => {
-    if (!confirm('Neue Runde starten? Der aktuelle Spielstand geht verloren.')) return;
+    if (!confirm('Neue Runde starten? Der aktuelle Spielstand und die Erinnerungen gehen verloren.')) return;
     currentAbortController?.abort();
+    // Long-Term-Memory für diesen Scope ebenfalls löschen — sonst bleibt
+    // die alte Welt-Erinnerung im neuen Spiel hängen.
+    const scope = currentScopeKey();
+    if (scope) void cloudClearStoryBeats(scope);
+    loadedStoryBeats = [];
     clearGame();
     players = [];
     messages = [];
@@ -4597,7 +4667,7 @@ function init() {
     hideLoginScreen();
     const save = loadGame();
     if (save) {
-      resumeGame(save);
+      void resumeGame(save);
     } else {
       showCharModal();
     }
