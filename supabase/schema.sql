@@ -169,6 +169,15 @@ begin
     alter publication supabase_realtime add table public.session_messages;
   exception when duplicate_object then null;
   end;
+  -- Joyce-Gott-Modus: Live-Updates wenn jemand sich registriert / einloggt
+  begin
+    alter publication supabase_realtime add table public.accounts;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.story_beats;
+  exception when duplicate_object then null;
+  end;
 end $$;
 
 -- ✅ Fertig — du solltest "Success. No rows returned" sehen
