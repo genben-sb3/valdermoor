@@ -259,6 +259,29 @@ export async function cloudDeleteAccount(usernameLower: string): Promise<boolean
   return true;
 }
 
+// 👁 Realtime-Subscription für Admin-Panel: triggert callback bei jeder
+// Änderung an accounts oder sessions. Joyce sieht neue Registrierungen live.
+export function subscribeToAdminEvents(handlers: {
+  onAccountChange?: () => void;
+  onSessionChange?: () => void;
+}): () => void {
+  if (!isMultiplayerAvailable()) return () => {};
+  const supa = getClient();
+  const ch = supa
+    .channel('valdermoor-admin', { config: { broadcast: { self: false } } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, () => {
+      handlers.onAccountChange?.();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
+      handlers.onSessionChange?.();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'session_players' }, () => {
+      handlers.onSessionChange?.();
+    })
+    .subscribe();
+  return () => { void supa.removeChannel(ch); };
+}
+
 // 💀 Globaler Broadcast-Channel für creepy Server-Events
 let globalChannel: RealtimeChannel | null = null;
 

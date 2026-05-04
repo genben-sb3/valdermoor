@@ -31,6 +31,7 @@ import {
   cloudCloseSession,
   cloudKickPlayer,
   cloudListPlayersForSession,
+  subscribeToAdminEvents,
   type MpSessionWithCount,
   subscribeToGlobalEvents,
   broadcastShutdown,
@@ -1790,6 +1791,8 @@ const godProtectedUsers = new Set<string>();
 // momentan nicht benötigt, daher entfernt.
 let godSearchQuery = '';
 let godRefreshTimer: number | null = null;
+let godRealtimeUnsub: (() => void) | null = null;
+let lastKnownAccountCount = 0;
 // Cache pro Render — wird von tab-spezifischen Renderern genutzt
 let cachedAccounts: CloudAccount[] = [];
 let cachedSessions: MpSessionWithCount[] = [];
@@ -1860,11 +1863,16 @@ function closeGodModal() {
 
 function startGodAutoRefresh() {
   stopGodAutoRefresh();
-  // Alle 10 Sekunden Daten erneuern, solange das Modal offen ist
+  // Alle 10 Sekunden Daten erneuern als Fallback (falls Realtime ausfällt)
   godRefreshTimer = window.setInterval(() => {
     if (!isGodUser()) { stopGodAutoRefresh(); return; }
     void refreshAllGodData();
   }, 10_000);
+  // Realtime: sofortiges Update bei Registrierung / Login / Session-Änderung
+  godRealtimeUnsub = subscribeToAdminEvents({
+    onAccountChange: () => { void refreshAllGodData(); },
+    onSessionChange: () => { void refreshAllGodData(); },
+  });
 }
 
 function stopGodAutoRefresh() {
@@ -1872,6 +1880,26 @@ function stopGodAutoRefresh() {
     clearInterval(godRefreshTimer);
     godRefreshTimer = null;
   }
+  if (godRealtimeUnsub) {
+    godRealtimeUnsub();
+    godRealtimeUnsub = null;
+  }
+}
+
+// Eigener Toast oben mittig (umgeht Save-Throttle, animiert kurz).
+function showGodToast(text: string) {
+  let toast = document.getElementById('god-toast') as HTMLDivElement | null;
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'god-toast';
+    toast.className = 'god-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.remove('show');
+  void toast.offsetWidth;
+  toast.classList.add('show');
+  window.setTimeout(() => toast?.classList.remove('show'), 3500);
 }
 
 async function refreshAllGodData() {
@@ -1899,6 +1927,14 @@ async function refreshAllGodData() {
   cachedAccounts = Array.from(merged.values()).sort((a, b) =>
     a.created_at < b.created_at ? 1 : -1,
   );
+  // Detect: gibt's neue Accounts seit letztem Render? → Toast + Sound
+  if (lastKnownAccountCount > 0 && cachedAccounts.length > lastKnownAccountCount) {
+    const diff = cachedAccounts.length - lastKnownAccountCount;
+    const newest = cachedAccounts[0];
+    showGodToast(`✨ Neuer User: ${newest.username}${diff > 1 ? ` (+${diff - 1} weitere)` : ''}`);
+    try { playLoginSuccess(); } catch { /* */ }
+  }
+  lastKnownAccountCount = cachedAccounts.length;
   cachedSessions = sessions;
   renderGodStats();
   renderAccountsList();
