@@ -91,6 +91,10 @@ interface Player {
   maxHp: number;
   stats: Record<StatKey, number>;
   color: string;
+  // Items aus PDF, die beim Spielstart ins gemeinsame Inventar wandern.
+  // Sitzt am Spieler (statt direkt im inventory[]), weil beginAdventure()
+  // das inventory beim Start auf 0 setzt.
+  pendingItems?: InventoryItem[];
 }
 
 interface Message {
@@ -2982,7 +2986,14 @@ function renderPlayerForms() {
           }
         }
       }
-      pdfStatus.textContent = `✓ ${filled} Felder erkannt.`;
+      const itemCount = fields.items?.length ?? 0;
+      if (itemCount > 0) {
+        p.pendingItems = fields.items;
+      } else {
+        delete p.pendingItems;
+      }
+      const itemSuffix = itemCount > 0 ? ` · ${itemCount} Items` : '';
+      pdfStatus.textContent = `✓ ${filled} Felder erkannt${itemSuffix}.`;
       pdfStatus.className = 'pdf-status ok';
       renderPlayerTabs();
     } catch (err) {
@@ -3328,6 +3339,17 @@ async function beginAdventure() {
 
   messages = [{ role: 'system', content: buildSystemPrompt() }];
   inventory.length = 0;
+  // Items aus den PDF-Importen ins gemeinsame Inventar übernehmen.
+  // Duplikate gleichen Namens werden zu einem Eintrag aufsummiert.
+  for (const p of players) {
+    if (!p.pendingItems?.length) continue;
+    for (const it of p.pendingItems) {
+      const existing = inventory.find((x) => x.name.toLowerCase() === it.name.toLowerCase());
+      if (existing) existing.quantity += it.quantity;
+      else inventory.push({ name: it.name, quantity: it.quantity });
+    }
+    delete p.pendingItems;
+  }
   quests.length = 0;
   currentLocation = '';
   currentLocationImage = '';
@@ -3436,10 +3458,16 @@ async function extractPdfText(file: File): Promise<string> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const strings = content.items
-      .map((it) => ('str' in it ? (it as { str: string }).str : ''))
-      .filter(Boolean);
-    pages.push(strings.join(' '));
+    // hasEOL preserves PDF-Zeilenumbrüche — sonst bekommen wir alle Items
+    // als endlose Worm-Zeile, und das Equipment-Parsing scheitert.
+    let out = '';
+    for (const it of content.items) {
+      if (!('str' in it)) continue;
+      const item = it as { str: string; hasEOL?: boolean };
+      out += item.str;
+      out += item.hasEOL ? '\n' : ' ';
+    }
+    pages.push(out);
   }
   return pages.join('\n\n');
 }
@@ -3450,6 +3478,7 @@ function parseSheetFields(text: string) {
     class: string;
     maxHp: number;
     stats: Partial<Record<StatKey, number>>;
+    items: InventoryItem[];
   }> = { stats: {} };
 
   const nameMatch =
@@ -3494,7 +3523,62 @@ function parseSheetFields(text: string) {
       }
     }
   }
+
+  result.items = parseEquipmentItems(text);
   return result;
+}
+
+// D&D-Charakter-Sheets listen Equipment als "<Anzahl> <Name>" pro Zeile,
+// meist innerhalb einer EQUIPMENT-Sektion. Wir suchen die Sektion, sonst
+// fallen wir auf einen Whole-Doc-Scan mit strenger Filterung zurück.
+function parseEquipmentItems(text: string): InventoryItem[] {
+  const items: InventoryItem[] = [];
+
+  // EQUIPMENT-Block einrahmen — Ende = nächste Sheet-Überschrift oder Doku-Ende.
+  const sectionRx = /(?:^|\n)\s*(?:EQUIPMENT|AUSRÜSTUNG|Ausrüstung)\b([\s\S]*?)(?=\n\s*(?:FEATURES\s*&?\s*TRAITS|MERKMALE|ATTACKS?\s*&?\s*SPELLCASTING|SPELLCASTING|SPELLS|ZAUBER|TREASURE|SCHATZ|WILD\s*SHAPE|EQUIPMENT|AUSRÜSTUNG)\b|$)/i;
+  const sectionMatch = text.match(sectionRx);
+  const scope = sectionMatch ? sectionMatch[1] : text;
+
+  // Skip-Liste: Wörter die nach einer Zahl stehen können aber keine Items sind
+  // (kommt vor in Stat-Blocks, Wurf-Tabellen, Spell-Listen).
+  const NON_ITEM = new Set([
+    'fire', 'thunder', 'radiant', 'piercing', 'slashing', 'bludgeoning',
+    'cold', 'lightning', 'acid', 'poison', 'force', 'psychic', 'necrotic',
+    'healing', 'damage', 'feet', 'foot', 'ft', 'minutes', 'minute', 'hours',
+    'hour', 'rounds', 'round', 'level', 'cantrip', 'cantrips', 'gp', 'sp',
+    'cp', 'ep', 'pp', 'xp', 'hp', 'ac', 'dc',
+  ]);
+
+  for (const rawLine of scope.split(/\n+/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Erwartetes Format: "<1-3 Ziffern> <Item-Name>"
+    const m = line.match(/^(\d{1,3})\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß0-9\s'.\-+&]{1,60})$/);
+    if (!m) continue;
+
+    const qty = parseInt(m[1], 10);
+    let name = m[2].trim().replace(/\s{2,}/g, ' ');
+
+    if (qty < 1 || qty > 999) continue;
+    if (name.length < 2 || name.length > 50) continue;
+    // Mindestens 2 alphabetische Zeichen — filtert "20 5 30" o.ä.
+    if ((name.match(/[A-Za-zÄÖÜäöüß]/g) ?? []).length < 2) continue;
+    // Reine Schaden/Distanz/Zeit-Zeilen ausschließen
+    const firstWord = name.split(/\s+/)[0].toLowerCase();
+    if (NON_ITEM.has(firstWord)) continue;
+    // Dice-Notation ("d8 Fire" etc.) ausschließen
+    if (/^d\d/i.test(name)) continue;
+
+    name = name.replace(/[\s.]+$/, '');
+
+    // Mit existierendem Item gleichen Namens zusammenfassen
+    const existing = items.find((i) => i.name.toLowerCase() === name.toLowerCase());
+    if (existing) existing.quantity += qty;
+    else items.push({ name, quantity: qty });
+  }
+
+  return items;
 }
 
 // ────────────────────────────────────────────────────────────
