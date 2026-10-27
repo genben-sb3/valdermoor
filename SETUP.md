@@ -116,7 +116,7 @@ Hinweise zur Bedienung:
 Groq ist eine kostenlose API mit Llama-3.3-70B und ähnlichen Top-Modellen — **deutlich besser und schneller als Pollinations**, aber benötigt einen API-Key (kostenlos, ohne Kreditkarte).
 
 ### Setup
-1. https://console.groq.com → **Sign in with Google** (mit 278487459+genben-sb3@users.noreply.github.com)
+1. https://console.groq.com → **Sign in with Google** (mit deinem Google-Konto)
 2. Linker Menüpunkt **API Keys** → **Create API Key**
 3. Name z.B. "valdermoor", **Submit** → den Key sofort kopieren (wird nur einmal gezeigt!)
 4. Im Projekt: `.env`-Datei öffnen (oder `.env.example` kopieren falls noch nicht da)

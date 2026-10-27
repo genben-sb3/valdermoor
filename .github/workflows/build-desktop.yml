@@ -45,6 +45,8 @@ jobs:
           VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
           VITE_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_EMAILJS_TEMPLATE_ID }}
           VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
+          VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
+          VITE_ADMIN_PASSWORD: ${{ secrets.VITE_ADMIN_PASSWORD }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

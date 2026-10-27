@@ -447,7 +447,7 @@ const LEGACY_ADMIN_USERNAME = 'ben'; // alter Name — wird beim Login einmalig 
 function isAdminUser(): boolean {
   if (!currentUser || !ADMIN_USERS.includes(currentUser.toLowerCase())) return false;
   const acct = loadAccounts()[currentUser.toLowerCase()];
-  return !!acct && acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase();
+  return !!acct && isAdminEmail(acct.email);
 }
 
 // Stabiler Hash damit der gleiche Held IMMER das gleiche Avatar-Bild bekommt
@@ -1437,7 +1437,7 @@ function setupLoginForm() {
     // gesetzt wird.
     if (
       userLower === LEGACY_ADMIN_USERNAME &&
-      acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase()
+      isAdminEmail(acct.email)
     ) {
       console.log('🔁 Login-Time-Migration: rename "ben" → "admin"');
       const renamed: StoredAccount = { ...acct, username: 'admin' };
@@ -1674,10 +1674,10 @@ function isGodUser(): boolean {
   if (currentUser.toLowerCase() !== 'admin') return false;
   const acct = loadAccounts()['admin'];
   if (!acct) return false;
-  return acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase();
+  return isAdminEmail(acct.email);
 }
 
-const GLITCH_OVERRIDE_PWD = '***REMOVED***';
+const GLITCH_OVERRIDE_PWD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) ?? '';
 let glitchPhaseTimer: number | null = null;
 
 function fillGlitchMatrix() {
@@ -1730,7 +1730,7 @@ function showGlitchOverlay(opts: { allowOverride: boolean }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (input.value === GLITCH_OVERRIDE_PWD) {
+        if (GLITCH_OVERRIDE_PWD !== '' && input.value === GLITCH_OVERRIDE_PWD) {
           input.removeEventListener('keydown', onKey);
           void runRestoreAnimation();
         } else {
@@ -2536,12 +2536,18 @@ function startInactivityLock() {
 // (Echte Sicherheit = 2FA via E-Mail, das haben wir bereits.)
 // ────────────────────────────────────────────────────────────
 
-const HONEYTRAP_EMAIL = '278487459+genben-sb3@users.noreply.github.com';
-const HONEYTRAP_PASSWORD = '***REMOVED***';
+// Admin-Email und -Passwort kommen aus .env (VITE_ADMIN_EMAIL, VITE_ADMIN_PASSWORD),
+// damit sie nicht im öffentlichen Repo stehen. Ohne die Variablen gibt es keinen Admin.
+const HONEYTRAP_EMAIL = ((import.meta.env.VITE_ADMIN_EMAIL as string | undefined) ?? '').trim().toLowerCase();
+const HONEYTRAP_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) ?? '';
+
+function isAdminEmail(email: string): boolean {
+  return HONEYTRAP_EMAIL !== '' && email.toLowerCase() === HONEYTRAP_EMAIL;
+}
 
 function shouldHoneytrap(acct: StoredAccount | undefined): boolean {
   if (!acct) return false;
-  return acct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase();
+  return isAdminEmail(acct.email);
 }
 
 function showHoneytrap(): Promise<boolean> {
@@ -2578,7 +2584,7 @@ function showHoneytrap(): Promise<boolean> {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (input.value === HONEYTRAP_PASSWORD) {
+        if (HONEYTRAP_PASSWORD !== '' && input.value === HONEYTRAP_PASSWORD) {
           succeed();
         } else {
           if (warn) warn.textContent = '⚠ Falsch. Beim nächsten Verlassen des Felds gekickt.';
@@ -5152,7 +5158,7 @@ async function migrateBenToAdmin(): Promise<void> {
     const oldAcct = accounts[LEGACY_ADMIN_USERNAME];
     if (oldAcct && !accounts['admin']) {
       // Sicherheitscheck: nur migrieren wenn die E-Mail zum bekannten Admin-Konto passt.
-      if (oldAcct.email.toLowerCase() === HONEYTRAP_EMAIL.toLowerCase()) {
+      if (isAdminEmail(oldAcct.email)) {
         const renamed: StoredAccount = { ...oldAcct, username: 'admin' };
         delete accounts[LEGACY_ADMIN_USERNAME];
         accounts['admin'] = renamed;
